@@ -1,12 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Read config from env or localStorage if user configured it dynamically
+const cleanUrl = (url) => {
+  if (!url) return '';
+  return url.trim().replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
+};
+
 const getSupabaseConfig = () => {
   const localUrl = localStorage.getItem('chainshield_supabase_url');
   const localKey = localStorage.getItem('chainshield_supabase_key');
 
-  const supabaseUrl = localUrl || import.meta.env.VITE_SUPABASE_URL || '';
-  const supabaseAnonKey = localKey || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  const rawUrl = localUrl || import.meta.env.VITE_SUPABASE_URL || '';
+  const supabaseUrl = cleanUrl(rawUrl);
+  const supabaseAnonKey = (localKey || import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
   return { supabaseUrl, supabaseAnonKey };
 };
