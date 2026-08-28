@@ -3,6 +3,7 @@ import { Navbar } from './components/Navbar';
 import { UrlScanner } from './components/UrlScanner';
 import { MessageScanner } from './components/MessageScanner';
 import { CryptoForensics } from './components/CryptoForensics';
+import { EnforcementHub } from './components/EnforcementHub';
 import { CaseManager } from './components/CaseManager';
 import { ThreatDatabase } from './components/ThreatDatabase';
 import { ReportModal } from './components/ReportModal';
@@ -52,6 +53,10 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'enforcement' && (
+          <EnforcementHub onOpenDossier={() => setIsReportModalOpen(true)} />
+        )}
+
         {activeTab === 'cases' && (
           <CaseManager onOpenDossier={() => setIsReportModalOpen(true)} />
         )}
@@ -79,9 +84,6 @@ export default function App() {
         isOpen={isFlagModalOpen}
         initialAddress={selectedWalletForScan}
         onClose={() => setIsFlagModalOpen(false)}
-        onFlaggedSuccess={() => {
-          // Trigger refresh if needed
-        }}
       />
 
       {/* Footer */}

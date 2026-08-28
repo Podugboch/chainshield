@@ -116,7 +116,6 @@ export const dbService = {
     if (!address) return null;
     const clean = address.trim().toLowerCase();
     
-    // Check Supabase
     if (supabase) {
       try {
         const { data, error } = await supabase
@@ -130,9 +129,31 @@ export const dbService = {
       }
     }
 
-    // Check Local
     const all = await this.getScamWallets();
     return all.find(w => w.wallet_address.toLowerCase() === clean) || null;
+  },
+
+  // Pre-Payout Firewall Verification
+  async verifyPayoutAddress(address, platformName = 'Platform Payout') {
+    const flaggedRecord = await this.isWalletFlagged(address);
+    if (flaggedRecord) {
+      return {
+        isAllowed: false,
+        status: 'BLOCKED',
+        decision: 'PAYMENT_INTERCEPTED_AND_BLOCKED',
+        reason: `Address is blacklisted in ChainShield for ${flaggedRecord.scam_category} (Impersonated: ${flaggedRecord.impersonated_brand})`,
+        flaggedRecord,
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    return {
+      isAllowed: true,
+      status: 'APPROVED',
+      decision: 'PAYMENT_PERMITTED',
+      reason: 'No malicious signatures or active blacklist records found.',
+      timestamp: new Date().toISOString()
+    };
   },
 
   // Add a scam wallet

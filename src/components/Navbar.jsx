@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, ShieldAlert, Activity, Database, FileText, DatabaseZap } from 'lucide-react';
+import { Shield, ShieldAlert, Activity, Database, FileText, ShieldBan, DatabaseZap } from 'lucide-react';
 import { isSupabaseConfigured } from '../lib/supabase';
 
 export function Navbar({ activeTab, setActiveTab, onOpenSupabaseModal }) {
@@ -7,6 +7,7 @@ export function Navbar({ activeTab, setActiveTab, onOpenSupabaseModal }) {
     { id: 'url-scanner', label: 'Link Scanner', icon: Shield },
     { id: 'message-scanner', label: 'Message & Email AI', icon: ShieldAlert },
     { id: 'forensics', label: 'Crypto Forensics', icon: Activity },
+    { id: 'enforcement', label: 'Blacklist & Freeze Hub', icon: ShieldBan },
     { id: 'cases', label: 'Investigation Cases', icon: FileText },
     { id: 'threat-db', label: 'Threat Database', icon: Database },
   ];
@@ -35,7 +36,7 @@ export function Navbar({ activeTab, setActiveTab, onOpenSupabaseModal }) {
           </div>
 
           {/* Nav Tabs */}
-          <nav className="hidden md:flex space-x-1">
+          <nav className="hidden lg:flex space-x-1">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -43,13 +44,13 @@ export function Navbar({ activeTab, setActiveTab, onOpenSupabaseModal }) {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center space-x-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-all ${
+                  className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                     isActive
                       ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30 shadow-sm'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-sky-400' : 'text-slate-400'}`} />
+                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-sky-400' : 'text-slate-400'}`} />
                   <span>{item.label}</span>
                 </button>
               );
@@ -73,7 +74,7 @@ export function Navbar({ activeTab, setActiveTab, onOpenSupabaseModal }) {
         </div>
 
         {/* Mobile Navigation Row */}
-        <div className="flex md:hidden overflow-x-auto py-2 space-x-1 border-t border-slate-800/60">
+        <div className="flex lg:hidden overflow-x-auto py-2 space-x-1 border-t border-slate-800/60">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
