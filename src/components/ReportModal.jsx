@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { X, Copy, Check, Printer, FileText, Shield } from 'lucide-react';
-import { SAMPLE_INCIDENT, generateLawEnforcementDossier } from '../lib/blockchainForensics';
+import { DEFAULT_INCIDENT, generateLawEnforcementDossier } from '../lib/blockchainForensics';
 
-export function ReportModal({ isOpen, onClose }) {
+export function ReportModal({ isOpen, onClose, customIncident }) {
   if (!isOpen) return null;
 
   const [copied, setCopied] = useState(false);
-  const dossierText = generateLawEnforcementDossier(SAMPLE_INCIDENT);
+  const incidentData = customIncident || DEFAULT_INCIDENT;
+  const dossierText = generateLawEnforcementDossier(incidentData);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(dossierText);
@@ -41,7 +42,7 @@ export function ReportModal({ isOpen, onClose }) {
           </button>
         </div>
 
-        {/* Modal Content / Dossier text */}
+        {/* Modal Content */}
         <div className="p-6 overflow-y-auto font-mono text-xs text-slate-300 leading-relaxed bg-[#070a0f] space-y-4">
           <pre className="whitespace-pre-wrap selection:bg-sky-500/30 selection:text-sky-200">
             {dossierText}

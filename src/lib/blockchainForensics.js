@@ -1,17 +1,87 @@
 /**
- * Blockchain Forensics, Multi-Chain Transaction Parser & Flow Builder
+ * Blockchain Forensics Engine
+ * Real-Time Multi-Chain JSON-RPC Live Scanner & Entity Tracing
  */
 
-export const KNOWN_ENTITIES = {
-  '0x28c6c06298d514db089934071355e5743bf21d60': { name: 'Binance: Hot Wallet 6', type: 'CEX_HOT_WALLET' },
-  '0x21a31ee1afc51d94c2efccaa2092ad1028285549': { name: 'Binance: Hot Wallet 14', type: 'CEX_HOT_WALLET' },
-  '0xdfd5293d8e347dFe59E90eFd55b2956a1343963d': { name: 'Binance: Deposit Gateway', type: 'CEX_DEPOSIT' },
-  '0xd23ac29c1e1949d0c5864b4a23a01cc3e4dd236b': { name: 'Atlas Capture Scammer Intermediary', type: 'SCAMMER_COLLECTOR' },
-  '0xdac17f958d2ee523a2206206994597c13d831ec7': { name: 'Tether USD (USDT)', type: 'TOKEN_CONTRACT' },
-  '0x55d398326f99059ff775485246999027b3197955': { name: 'Binance-Peg BSC-USD', type: 'TOKEN_CONTRACT' }
+export const SUPPORTED_NETWORKS = {
+  ethereum: {
+    id: 'ethereum',
+    name: 'Ethereum Mainnet',
+    currency: 'ETH',
+    rpcUrls: ['https://cloudflare-eth.com', 'https://ethereum-rpc.publicnode.com'],
+    explorer: 'https://etherscan.io',
+    tokens: [
+      { symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6 },
+      { symbol: 'USDC', address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', decimals: 6 }
+    ]
+  },
+  bsc: {
+    id: 'bsc',
+    name: 'BNB Smart Chain (BSC)',
+    currency: 'BNB',
+    rpcUrls: ['https://bsc-dataseed1.binance.org', 'https://bsc-rpc.publicnode.com'],
+    explorer: 'https://bscscan.com',
+    tokens: [
+      { symbol: 'USDT (BEP-20)', address: '0x55d398326f99059ff775485246999027b3197955', decimals: 18 },
+      { symbol: 'USDC', address: '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d', decimals: 18 }
+    ]
+  },
+  polygon: {
+    id: 'polygon',
+    name: 'Polygon (PoS)',
+    currency: 'POL',
+    rpcUrls: ['https://polygon-bor-rpc.publicnode.com', 'https://polygon-rpc.com'],
+    explorer: 'https://polygonscan.com',
+    tokens: [
+      { symbol: 'USDT', address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', decimals: 6 },
+      { symbol: 'USDC', address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', decimals: 6 }
+    ]
+  },
+  arbitrum: {
+    id: 'arbitrum',
+    name: 'Arbitrum One',
+    currency: 'ETH',
+    rpcUrls: ['https://arb1.arbitrum.io/rpc', 'https://arbitrum-one-rpc.publicnode.com'],
+    explorer: 'https://arbiscan.io',
+    tokens: [
+      { symbol: 'USDT', address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9', decimals: 6 },
+      { symbol: 'USDC', address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', decimals: 6 }
+    ]
+  },
+  base: {
+    id: 'base',
+    name: 'Base',
+    currency: 'ETH',
+    rpcUrls: ['https://mainnet.base.org'],
+    explorer: 'https://basescan.org',
+    tokens: [
+      { symbol: 'USDC', address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', decimals: 6 }
+    ]
+  },
+  optimism: {
+    id: 'optimism',
+    name: 'Optimism',
+    currency: 'ETH',
+    rpcUrls: ['https://mainnet.optimism.io'],
+    explorer: 'https://optimistic.etherscan.io',
+    tokens: [
+      { symbol: 'USDT', address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58', decimals: 6 },
+      { symbol: 'USDC', address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', decimals: 6 }
+    ]
+  }
 };
 
-export const SAMPLE_INCIDENT = {
+export const KNOWN_ENTITIES = {
+  '0x28c6c06298d514db089934071355e5743bf21d60': { name: 'Binance: Hot Wallet 6', type: 'CEX_EXCHANGE', riskLevel: 'MONITORED_KYC', color: '#f59e0b' },
+  '0x21a31ee1afc51d94c2efccaa2092ad1028285549': { name: 'Binance: Hot Wallet 14', type: 'CEX_EXCHANGE', riskLevel: 'MONITORED_KYC', color: '#f59e0b' },
+  '0xdfd5293d8e347dfe59e90efd55b2956a1343963d': { name: 'Binance: Deposit Gateway', type: 'CEX_DEPOSIT', riskLevel: 'MONITORED_KYC', color: '#f59e0b' },
+  '0xd23ac29c1e1949d0c5864b4a23a01cc3e4dd236b': { name: 'Atlas Capture Phishing Collector', type: 'FLAGGED_SCAMMER', riskLevel: 'CRITICAL', color: '#ef4444' },
+  '0x70faa28a6b8d6d0fc678a165fc367756f71d5b35': { name: 'OKX Deposit Gateway', type: 'CEX_DEPOSIT', riskLevel: 'MONITORED_KYC', color: '#3b82f6' },
+  '0xdac17f958d2ee523a2206206994597c13d831ec7': { name: 'Tether USD (ERC-20 USDT)', type: 'TOKEN_CONTRACT', riskLevel: 'VERIFIED', color: '#10b981' },
+  '0x55d398326f99059ff775485246999027b3197955': { name: 'Binance-Peg BSC-USD', type: 'TOKEN_CONTRACT', riskLevel: 'VERIFIED', color: '#10b981' }
+};
+
+export const DEFAULT_INCIDENT = {
   incidentId: 'INC-2026-ATLAS-01',
   victimPlatform: 'Atlas Capture Contractor Payout',
   stolenAmount: '$146.07 USD',
@@ -20,70 +90,247 @@ export const SAMPLE_INCIDENT = {
   txHash: '0x44e5dbb257694dd3297e3a24808a6098f2bce9816bc9b202879104dccec911e7',
   destinationExchange: 'Binance (Deposit Address)',
   destinationAddress: '0x28C6c06298d514Db089934071355E5743bf21d60',
-  summary: 'Phishing attack compromised user session on Atlas Capture. Scammer altered payout wallet to 0xd23Ac2...236b, received $146.07 USDT, and forwarded funds directly into a Binance KYC-verified deposit wallet.'
+  summary: 'Phishing attack compromised user credentials on Atlas Capture. Scammer altered payout wallet to 0xd23Ac2...236b, received $146.07 USDT, and swept funds directly to Binance.'
 };
 
+export const SAMPLE_INCIDENT = DEFAULT_INCIDENT;
+
+/**
+ * Execute standard JSON-RPC query against public node
+ */
+async function rpcCall(rpcUrl, method, params) {
+  const payload = {
+    jsonrpc: '2.0',
+    method: method,
+    params: params,
+    id: Math.floor(Math.random() * 1000)
+  };
+
+  const response = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error(`RPC HTTP Error: ${response.status}`);
+  }
+
+  const json = await response.json();
+  if (json.error) {
+    throw new Error(json.error.message || 'RPC execution error');
+  }
+  return json.result;
+}
+
 export function identifyEntity(address) {
-  if (!address) return { name: 'Unknown Wallet', type: 'EOA' };
+  if (!address) return { name: 'Unknown', type: 'EOA', riskLevel: 'UNKNOWN', color: '#94a3b8' };
   const lower = address.toLowerCase();
-  return KNOWN_ENTITIES[lower] || { name: `External Address (${address.slice(0, 6)}...${address.slice(-4)})`, type: 'EOA' };
-}
-
-export function buildTransactionFlowGraph(scammerAddr, txHash, amount = '146.07', token = 'USDT') {
-  const victimNode = {
-    id: 'node-victim',
-    label: 'Atlas Capture Platform',
-    sublabel: 'Legitimate Contractor Payout Source',
-    type: 'VICTIM_SOURCE',
-    color: '#38bdf8',
-    icon: 'Briefcase'
-  };
-
-  const intermediaryNode = {
-    id: 'node-scammer',
-    label: 'Scammer Intercept Wallet',
-    sublabel: `${scammerAddr.slice(0, 6)}...${scammerAddr.slice(-4)}`,
-    fullAddress: scammerAddr,
-    type: 'SCAMMER_INTERMEDIARY',
-    color: '#ef4444',
-    icon: 'AlertTriangle'
-  };
-
-  const binanceNode = {
-    id: 'node-binance',
-    label: 'Binance Deposit Wallet',
-    sublabel: 'KYC Identity-Linked Cluster',
-    fullAddress: '0x28C6c06298d514Db089934071355E5743bf21d60',
-    type: 'CEX_DEPOSIT',
-    color: '#f59e0b',
-    icon: 'Building2'
-  };
-
-  const edges = [
-    {
-      id: 'edge-1',
-      from: 'node-victim',
-      to: 'node-scammer',
-      label: `${amount} ${token}`,
-      note: 'Unauthorized Payout Intercept',
-      txHash: txHash
-    },
-    {
-      id: 'edge-2',
-      from: 'node-scammer',
-      to: 'node-binance',
-      label: `Swept ${amount} ${token}`,
-      note: 'Forwarded to CEX for Cashout',
-      txHash: '0x39a1f2b... (Forwarding TX)'
-    }
-  ];
-
+  if (KNOWN_ENTITIES[lower]) {
+    return KNOWN_ENTITIES[lower];
+  }
   return {
-    nodes: [victimNode, intermediaryNode, binanceNode],
-    edges
+    name: `Address (${address.slice(0, 6)}...${address.slice(-4)})`,
+    type: 'EOA',
+    riskLevel: 'UNTAGGED',
+    color: '#94a3b8'
   };
 }
 
+/**
+ * Scan a single Wallet on a specific chain in real time
+ */
+export async function scanWalletLive(rawAddress, networkKey = 'ethereum') {
+  const address = rawAddress.trim();
+  const net = SUPPORTED_NETWORKS[networkKey] || SUPPORTED_NETWORKS.ethereum;
+  const rpcUrl = net.rpcUrls[0];
+
+  const results = {
+    address,
+    network: net.name,
+    currency: net.currency,
+    explorerUrl: `${net.explorer}/address/${address}`,
+    isContract: false,
+    nonce: 0,
+    nativeBalance: 0,
+    tokenBalances: [],
+    riskScore: 0,
+    riskLevel: 'LOW',
+    riskFlags: [],
+    entity: identifyEntity(address),
+    timestamp: new Date().toISOString()
+  };
+
+  try {
+    // 1. Check Native Balance
+    const balHex = await rpcCall(rpcUrl, 'eth_getBalance', [address, 'latest']);
+    if (balHex) {
+      results.nativeBalance = Number(BigInt(balHex)) / 1e18;
+    }
+
+    // 2. Check Nonce / Transaction Count
+    const countHex = await rpcCall(rpcUrl, 'eth_getTransactionCount', [address, 'latest']);
+    if (countHex) {
+      results.nonce = Number(BigInt(countHex));
+    }
+
+    // 3. Check Contract bytecode
+    const codeHex = await rpcCall(rpcUrl, 'eth_getCode', [address, 'latest']);
+    results.isContract = Boolean(codeHex && codeHex !== '0x' && codeHex !== '0x0');
+
+    // 4. Query ERC-20 Token Balances (USDT, USDC)
+    const addressPadded = '0x' + address.slice(2).toLowerCase().padStart(64, '0');
+    const balanceOfSig = '0x70a08231' + addressPadded.slice(2);
+
+    for (const tok of net.tokens) {
+      try {
+        const tokenBalHex = await rpcCall(rpcUrl, 'eth_call', [
+          { to: tok.address, data: balanceOfSig },
+          'latest'
+        ]);
+        if (tokenBalHex && tokenBalHex !== '0x') {
+          const rawVal = BigInt(tokenBalHex);
+          const formatted = Number(rawVal) / 10 ** tok.decimals;
+          results.tokenBalances.push({
+            symbol: tok.symbol,
+            balance: formatted,
+            tokenAddress: tok.address
+          });
+        }
+      } catch (e) {
+        console.warn(`Token check failed for ${tok.symbol}:`, e);
+      }
+    }
+
+    // 5. Evaluate Forensic Risk Heuristics
+    let score = 0;
+
+    if (results.entity.type === 'FLAGGED_SCAMMER') {
+      score += 85;
+      results.riskFlags.push({
+        title: 'Flagged Malicious Address',
+        description: 'Explicitly indexed in threat intelligence database as an active scam intermediary.'
+      });
+    }
+
+    const totalTokens = results.tokenBalances.reduce((acc, t) => acc + t.balance, 0);
+    if (results.nonce > 0 && results.nativeBalance < 0.0001 && totalTokens === 0) {
+      score += 35;
+      results.riskFlags.push({
+        title: 'Swept / Burner Wallet Signature',
+        description: 'Non-zero transaction history with zero current balance (typical pattern for phishing cashout hops).'
+      });
+    }
+
+    if (results.entity.type === 'CEX_EXCHANGE' || results.entity.type === 'CEX_DEPOSIT') {
+      results.riskFlags.push({
+        title: 'Centralized Exchange Endpoint',
+        description: 'Deposits to this address are governed by mandatory KYC identity verification.'
+      });
+    }
+
+    results.riskScore = Math.min(100, score);
+    results.riskLevel = results.riskScore >= 70 ? 'CRITICAL' : results.riskScore >= 30 ? 'SUSPICIOUS' : 'LOW';
+
+    return results;
+  } catch (err) {
+    console.error('Wallet scan error:', err);
+    throw new Error(`Failed to query on-chain data: ${err.message}`);
+  }
+}
+
+/**
+ * Scan a single Transaction Hash across EVM networks
+ */
+export async function scanTransactionLive(rawTxHash, networkKey = 'ethereum') {
+  const txHash = rawTxHash.trim();
+  const net = SUPPORTED_NETWORKS[networkKey] || SUPPORTED_NETWORKS.ethereum;
+  const rpcUrl = net.rpcUrls[0];
+
+  const results = {
+    txHash,
+    network: net.name,
+    explorerUrl: `${net.explorer}/tx/${txHash}`,
+    status: 'UNKNOWN',
+    from: null,
+    to: null,
+    value: 0,
+    blockNumber: null,
+    gasUsed: 0,
+    isTokenTransfer: false,
+    tokenTransferData: null,
+    hops: [],
+    timestamp: new Date().toISOString()
+  };
+
+  try {
+    const tx = await rpcCall(rpcUrl, 'eth_getTransactionByHash', [txHash]);
+    if (!tx) {
+      return { found: false, message: `Transaction not indexed on ${net.name}.` };
+    }
+
+    results.found = true;
+    results.from = tx.from;
+    results.to = tx.to;
+    results.value = Number(BigInt(tx.value || '0x0')) / 1e18;
+    results.blockNumber = tx.blockNumber ? Number(BigInt(tx.blockNumber)) : null;
+
+    const receipt = await rpcCall(rpcUrl, 'eth_getTransactionReceipt', [txHash]);
+    if (receipt) {
+      results.status = receipt.status === '0x1' ? 'SUCCESS' : 'FAILED';
+      results.gasUsed = Number(BigInt(receipt.gasUsed || '0x0'));
+
+      const transferTopic = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+      const transferLog = receipt.logs?.find(l => l.topics?.[0] === transferTopic);
+
+      if (transferLog && transferLog.topics.length >= 3) {
+        results.isTokenTransfer = true;
+        const sender = '0x' + transferLog.topics[1].slice(26);
+        const recipient = '0x' + transferLog.topics[2].slice(26);
+        const rawAmount = BigInt(transferLog.data || '0x0');
+
+        const matchedToken = net.tokens.find(t => t.address.toLowerCase() === transferLog.address.toLowerCase());
+        const decimals = matchedToken ? matchedToken.decimals : 6;
+        const symbol = matchedToken ? matchedToken.symbol : 'USDT / TOKEN';
+        const formattedAmount = Number(rawAmount) / 10 ** decimals;
+
+        results.tokenTransferData = {
+          tokenContract: transferLog.address,
+          tokenSymbol: symbol,
+          sender,
+          recipient,
+          amount: formattedAmount
+        };
+
+        results.hops = [
+          {
+            step: 1,
+            label: 'Transaction Origin',
+            address: sender,
+            entity: identifyEntity(sender),
+            action: `Transferred ${formattedAmount} ${symbol}`
+          },
+          {
+            step: 2,
+            label: 'Receiving Wallet',
+            address: recipient,
+            entity: identifyEntity(recipient),
+            action: identifyEntity(recipient).type === 'CEX_DEPOSIT' ? 'Deposited into Exchange' : 'Received Funds'
+          }
+        ];
+      }
+    }
+
+    return results;
+  } catch (err) {
+    console.error('Tx scan error:', err);
+    throw new Error(`Failed to query transaction: ${err.message}`);
+  }
+}
+
+/**
+ * Generate official Law Enforcement & Binance Dossier
+ */
 export function generateLawEnforcementDossier(incident) {
   const dateStr = new Date().toUTCString();
   return `
