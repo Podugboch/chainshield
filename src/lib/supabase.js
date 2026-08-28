@@ -1,6 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Read config from env or localStorage if user configured it dynamically
 const cleanUrl = (url) => {
   if (!url) return '';
   return url.trim().replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
@@ -25,7 +24,6 @@ export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
-// Local fallback store to allow instant offline/zero-config operation
 const LOCAL_STORAGE_KEYS = {
   SCANS: 'chainshield_scans',
   WALLETS: 'chainshield_wallets',
@@ -42,7 +40,7 @@ const INITIAL_CASES = [
     amount_lost_usd: 146.07,
     token_symbol: 'USDT (ERC-20)',
     scammer_intermediary_wallet: '0xd23Ac29C1e1949D0c5864B4a23a01cc3e4dd236b',
-    destination_wallet: '0x28C6c06298d514Db089934071355E5743bf21d60', // Binance Hot/Deposit Wallet
+    destination_wallet: '0x28C6c06298d514Db089934071355E5743bf21d60',
     destination_entity: 'Binance (KYC Deposit)',
     tx_hash: '0x44e5dbb257694dd3297e3a24808a6098f2bce9816bc9b202879104dccec911e7',
     phishing_url: 'https://atlas-capture-support.top/payout-verify',
@@ -83,7 +81,6 @@ export const dbService = {
     return record;
   },
 
-  // Get all threat scans
   async getScans() {
     if (supabase) {
       try {
@@ -112,6 +109,30 @@ export const dbService = {
       return INITIAL_WALLETS;
     }
     return JSON.parse(local);
+  },
+
+  // Check if a specific address is flagged as a scammer
+  async isWalletFlagged(address) {
+    if (!address) return null;
+    const clean = address.trim().toLowerCase();
+    
+    // Check Supabase
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('scam_wallets')
+          .select('*')
+          .ilike('wallet_address', clean)
+          .maybeSingle();
+        if (!error && data) return data;
+      } catch (e) {
+        console.warn('Supabase flag check error:', e);
+      }
+    }
+
+    // Check Local
+    const all = await this.getScamWallets();
+    return all.find(w => w.wallet_address.toLowerCase() === clean) || null;
   },
 
   // Add a scam wallet
@@ -148,7 +169,6 @@ export const dbService = {
     return JSON.parse(local);
   },
 
-  // Add/update case
   async saveCase(caseData) {
     if (supabase) {
       try {

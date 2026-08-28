@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Activity, Search, ArrowRight, ShieldAlert, Building2, Briefcase, 
   ExternalLink, Copy, Check, Download, AlertTriangle, RefreshCw, 
-  CheckCircle2, Coins, Flame, Layers, ShieldCheck, Database
+  CheckCircle2, Coins, Flame, Layers, ShieldCheck, Database, Flag
 } from 'lucide-react';
 import { 
   SUPPORTED_NETWORKS, DEFAULT_INCIDENT, 
@@ -10,22 +10,23 @@ import {
 } from '../lib/blockchainForensics';
 import { dbService } from '../lib/supabase';
 
-export function CryptoForensics({ onGenerateReport }) {
-  const [queryInput, setQueryInput] = useState(DEFAULT_INCIDENT.scammerAddress);
+export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarget = '' }) {
+  const [queryInput, setQueryInput] = useState(initialTarget || DEFAULT_INCIDENT.scammerAddress);
   const [selectedNetwork, setSelectedNetwork] = useState('ethereum');
-  const [scanType, setScanType] = useState('wallet'); // 'wallet' or 'tx'
+  const [scanType, setScanType] = useState('wallet');
   const [isScanning, setIsScanning] = useState(false);
   const [walletResult, setWalletResult] = useState(null);
   const [txResult, setTxResult] = useState(null);
+  const [flagRecord, setFlagRecord] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const [copiedKey, setCopiedKey] = useState(null);
-  const [savedToDb, setSavedToDb] = useState(false);
 
-  const sampleTargets = [
-    { label: 'Atlas Capture Scammer', type: 'wallet', value: '0xd23Ac29C1e1949D0c5864B4a23a01cc3e4dd236b', net: 'ethereum' },
-    { label: 'Binance Hot Wallet', type: 'wallet', value: '0x28C6c06298d514Db089934071355E5743bf21d60', net: 'ethereum' },
-    { label: 'Atlas Capture TXID', type: 'tx', value: '0x44e5dbb257694dd3297e3a24808a6098f2bce9816bc9b202879104dccec911e7', net: 'ethereum' }
-  ];
+  useEffect(() => {
+    if (initialTarget) {
+      setQueryInput(initialTarget);
+      handleRunForensics(initialTarget, 'wallet', selectedNetwork);
+    }
+  }, [initialTarget]);
 
   const handleRunForensics = async (targetVal, typeVal, netVal) => {
     const rawTarget = (targetVal || queryInput).trim();
@@ -38,11 +39,27 @@ export function CryptoForensics({ onGenerateReport }) {
     setErrorMsg(null);
     setWalletResult(null);
     setTxResult(null);
-    setSavedToDb(false);
+    setFlagRecord(null);
 
     try {
       if (type === 'wallet') {
+        // 1. Live on-chain query
         const res = await scanWalletLive(rawTarget, net);
+        
+        // 2. Check if address is flagged in Supabase
+        const isFlagged = await dbService.isWalletFlagged(rawTarget);
+        if (isFlagged) {
+          res.riskScore = 100;
+          res.riskLevel = 'CRITICAL';
+          res.entity = {
+            name: `FLAGGED SCAMMER: ${isFlagged.impersonated_brand || isFlagged.scam_category}`,
+            type: 'FLAGGED_SCAMMER',
+            riskLevel: 'CRITICAL',
+            color: '#ef4444'
+          };
+          setFlagRecord(isFlagged);
+        }
+
         setWalletResult(res);
       } else {
         const res = await scanTransactionLive(rawTarget, net);
@@ -59,24 +76,6 @@ export function CryptoForensics({ onGenerateReport }) {
     }
   };
 
-  const handleSaveToScamDb = async (walletData) => {
-    try {
-      await dbService.addScamWallet({
-        wallet_address: walletData.address,
-        network: walletData.network,
-        scam_category: 'Phishing Intermediary',
-        impersonated_brand: 'Atlas Capture Impersonation',
-        total_stolen_usd: 146.07,
-        destination_entity: 'Binance',
-        destination_address: '0x28C6c06298d514Db089934071355E5743bf21d60',
-        notes: `Flagged via ChainShield Live Scan. Nonce: ${walletData.nonce}, Risk Score: ${walletData.riskScore}%`
-      });
-      setSavedToDb(true);
-    } catch (e) {
-      console.error('Save to scam DB error:', e);
-    }
-  };
-
   const copyToClipboard = (text, key) => {
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
@@ -90,44 +89,54 @@ export function CryptoForensics({ onGenerateReport }) {
       <div className="text-center space-y-3">
         <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 text-xs font-mono border border-amber-500/20">
           <Activity className="w-3.5 h-3.5" />
-          <span>Real-Time Multi-Chain JSON-RPC Forensics</span>
+          <span>Real-Time Scammer Detection & Multi-Chain Forensics</span>
         </div>
         <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-          Crypto Scam Forensics & Wallet Tracer
+          Flagged Scammer Tracker & Forensics
         </h1>
         <p className="text-slate-400 max-w-2xl mx-auto text-sm sm:text-base">
-          Scan any EVM address or transaction hash live. Query token balances, detect burner/swept wallet behavior, and trace funds to exchange KYC endpoints.
+          Scan any cryptocurrency wallet address to identify flagged scammers, verify burner/sweep status, and trace funds to exchange KYC endpoints.
         </p>
       </div>
 
       {/* Target Search & Filter Controls */}
       <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-2xl space-y-4">
         
-        {/* Mode Selector */}
-        <div className="flex space-x-2 border-b border-slate-800 pb-3">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="flex space-x-2">
+            <button
+              type="button"
+              onClick={() => {
+                setScanType('wallet');
+                setQueryInput('0xd23Ac29C1e1949D0c5864B4a23a01cc3e4dd236b');
+              }}
+              className={`px-4 py-1.5 rounded-lg text-xs font-mono font-semibold transition ${
+                scanType === 'wallet' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Scan Wallet Address
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setScanType('tx');
+                setQueryInput('0x44e5dbb257694dd3297e3a24808a6098f2bce9816bc9b202879104dccec911e7');
+              }}
+              className={`px-4 py-1.5 rounded-lg text-xs font-mono font-semibold transition ${
+                scanType === 'tx' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Scan Transaction Hash (TXID)
+            </button>
+          </div>
+
           <button
             type="button"
-            onClick={() => {
-              setScanType('wallet');
-              setQueryInput('0xd23Ac29C1e1949D0c5864B4a23a01cc3e4dd236b');
-            }}
-            className={`px-4 py-1.5 rounded-lg text-xs font-mono font-semibold transition ${
-              scanType === 'wallet' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-400 hover:text-white'
-            }`}
+            onClick={() => onOpenFlagModal && onOpenFlagModal(queryInput)}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 text-xs font-mono font-bold transition"
           >
-            Scan Wallet Address
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setScanType('tx');
-              setQueryInput('0x44e5dbb257694dd3297e3a24808a6098f2bce9816bc9b202879104dccec911e7');
-            }}
-            className={`px-4 py-1.5 rounded-lg text-xs font-mono font-semibold transition ${
-              scanType === 'tx' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Scan Transaction Hash (TXID)
+            <Flag className="w-3.5 h-3.5" />
+            <span>Flag Address as Scammer</span>
           </button>
         </div>
 
@@ -172,7 +181,7 @@ export function CryptoForensics({ onGenerateReport }) {
               {isScanning ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Querying RPC...</span>
+                  <span>Querying Nodes...</span>
                 </>
               ) : (
                 <>
@@ -183,26 +192,6 @@ export function CryptoForensics({ onGenerateReport }) {
             </button>
           </div>
         </form>
-
-        {/* Quick Samples */}
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/60">
-          <span className="text-xs text-slate-500">Quick Test Targets:</span>
-          {sampleTargets.map((sample, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => {
-                setQueryInput(sample.value);
-                setScanType(sample.type);
-                setSelectedNetwork(sample.net);
-                handleRunForensics(sample.value, sample.type, sample.net);
-              }}
-              className="text-xs font-mono px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition"
-            >
-              {sample.label}
-            </button>
-          ))}
-        </div>
 
       </div>
 
@@ -220,6 +209,39 @@ export function CryptoForensics({ onGenerateReport }) {
       {walletResult && (
         <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-2xl space-y-6 animate-fadeIn">
           
+          {/* Flagged Alert Banner */}
+          {flagRecord && (
+            <div className="p-5 rounded-2xl bg-gradient-to-r from-red-950/80 to-rose-950/60 border-2 border-red-500/60 shadow-xl shadow-red-950/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-start space-x-3">
+                <ShieldAlert className="w-8 h-8 text-red-400 shrink-0 mt-0.5 animate-pulse" />
+                <div>
+                  <span className="px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-300 text-[10px] font-mono font-bold border border-red-500/40 uppercase">
+                    CONFIRMED MALICIOUS SCAMMER WALLET
+                  </span>
+                  <h3 className="text-base font-extrabold text-white mt-1">
+                    Indexed in Threat Database: {flagRecord.impersonated_brand || flagRecord.scam_category}
+                  </h3>
+                  <p className="text-xs text-red-200/90 mt-1">
+                    This wallet is actively flagged for <b>{flagRecord.scam_category}</b>. Total verified losses: <b>${Number(flagRecord.total_stolen_usd || 0).toFixed(2)} USD</b>.
+                  </p>
+                  {flagRecord.destination_entity && (
+                    <p className="text-xs text-amber-300 font-mono mt-1">
+                      Target Cashout Gateway: <b>{flagRecord.destination_entity}</b>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <button
+                onClick={() => onGenerateReport && onGenerateReport()}
+                className="px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl transition shadow-lg shadow-red-600/30 flex items-center space-x-2 shrink-0"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export Binance / Police Case</span>
+              </button>
+            </div>
+          )}
+
           {/* Header Card */}
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-6 border-b border-slate-800">
             <div className="space-y-1">
@@ -248,7 +270,6 @@ export function CryptoForensics({ onGenerateReport }) {
 
           {/* On-Chain Metrics Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            
             <div className="p-4 rounded-xl bg-[#0a0d14] border border-slate-800 space-y-1">
               <span className="text-xs text-slate-500 font-mono">Native Balance:</span>
               <p className="text-lg font-bold text-white font-mono">
@@ -264,7 +285,7 @@ export function CryptoForensics({ onGenerateReport }) {
             </div>
 
             <div className="p-4 rounded-xl bg-[#0a0d14] border border-slate-800 space-y-1">
-              <span className="text-xs text-slate-500 font-mono">Entity Mapping:</span>
+              <span className="text-xs text-slate-500 font-mono">Threat Mapping:</span>
               <p className="text-xs font-bold font-mono truncate" style={{ color: walletResult.entity.color }}>
                 {walletResult.entity.name}
               </p>
@@ -282,7 +303,6 @@ export function CryptoForensics({ onGenerateReport }) {
                 <ExternalLink className="w-3 h-3" />
               </a>
             </div>
-
           </div>
 
           {/* Token Balances Audit */}
@@ -303,33 +323,15 @@ export function CryptoForensics({ onGenerateReport }) {
             </div>
           </div>
 
-          {/* Forensic Flags */}
-          {walletResult.riskFlags.length > 0 && (
-            <div className="space-y-2">
-              <h4 className="text-xs font-mono font-bold text-slate-400 uppercase">Forensic Indicators Detected:</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {walletResult.riskFlags.map((flag, idx) => (
-                  <div key={idx} className="p-3.5 rounded-xl bg-red-950/30 border border-red-900/40 space-y-1">
-                    <span className="text-xs font-bold text-red-300 font-mono">{flag.title}</span>
-                    <p className="text-xs text-red-200/80">{flag.description}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Actions */}
           <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex space-x-2">
-              <button
-                onClick={() => handleSaveToScamDb(walletResult)}
-                disabled={savedToDb}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono font-semibold rounded-xl transition flex items-center space-x-1.5"
-              >
-                {savedToDb ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Database className="w-4 h-4" />}
-                <span>{savedToDb ? 'Logged to Scam DB' : 'Log Address to Scam DB'}</span>
-              </button>
-            </div>
+            <button
+              onClick={() => onOpenFlagModal && onOpenFlagModal(walletResult.address)}
+              className="px-4 py-2 bg-red-950/40 hover:bg-red-900/50 border border-red-500/40 text-red-300 text-xs font-mono font-semibold rounded-xl transition flex items-center space-x-1.5"
+            >
+              <Flag className="w-3.5 h-3.5" />
+              <span>{flagRecord ? 'Update Flagged Intelligence' : 'Flag Address as Malicious'}</span>
+            </button>
 
             <button
               onClick={() => onGenerateReport && onGenerateReport()}
@@ -363,7 +365,6 @@ export function CryptoForensics({ onGenerateReport }) {
             </span>
           </div>
 
-          {/* Token Transfer Detail */}
           {txResult.isTokenTransfer && txResult.tokenTransferData && (
             <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 space-y-2">
               <span className="text-xs font-mono font-bold text-amber-300 uppercase">

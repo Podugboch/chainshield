@@ -7,11 +7,19 @@ import { CaseManager } from './components/CaseManager';
 import { ThreatDatabase } from './components/ThreatDatabase';
 import { ReportModal } from './components/ReportModal';
 import { SupabaseModal } from './components/SupabaseModal';
+import { FlagScammerModal } from './components/FlagScammerModal';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('url-scanner');
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
+  const [isFlagModalOpen, setIsFlagModalOpen] = useState(false);
+  const [selectedWalletForScan, setSelectedWalletForScan] = useState('');
+
+  const handleScanFromDb = (address) => {
+    setSelectedWalletForScan(address);
+    setActiveTab('forensics');
+  };
 
   return (
     <div className="min-h-screen bg-[#0a0d14] text-slate-100 flex flex-col selection:bg-sky-500/30 selection:text-sky-200">
@@ -34,7 +42,14 @@ export default function App() {
         )}
 
         {activeTab === 'forensics' && (
-          <CryptoForensics onGenerateReport={() => setIsReportModalOpen(true)} />
+          <CryptoForensics 
+            onGenerateReport={() => setIsReportModalOpen(true)} 
+            onOpenFlagModal={(addr) => {
+              setSelectedWalletForScan(addr || '');
+              setIsFlagModalOpen(true);
+            }}
+            initialTarget={selectedWalletForScan}
+          />
         )}
 
         {activeTab === 'cases' && (
@@ -42,7 +57,10 @@ export default function App() {
         )}
 
         {activeTab === 'threat-db' && (
-          <ThreatDatabase />
+          <ThreatDatabase 
+            onOpenFlagModal={() => setIsFlagModalOpen(true)}
+            onScanAddress={handleScanFromDb}
+          />
         )}
       </main>
 
@@ -55,6 +73,15 @@ export default function App() {
       <SupabaseModal
         isOpen={isSupabaseModalOpen}
         onClose={() => setIsSupabaseModalOpen(false)}
+      />
+
+      <FlagScammerModal
+        isOpen={isFlagModalOpen}
+        initialAddress={selectedWalletForScan}
+        onClose={() => setIsFlagModalOpen(false)}
+        onFlaggedSuccess={() => {
+          // Trigger refresh if needed
+        }}
       />
 
       {/* Footer */}
