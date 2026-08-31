@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Activity, Search, ArrowRight, ShieldAlert, Building2, Briefcase, 
   ExternalLink, Copy, Check, Download, AlertTriangle, RefreshCw, 
-  CheckCircle2, Coins, Flame, Layers, ShieldCheck, Database, Flag
+  CheckCircle2, Coins, Flame, Layers, ShieldCheck, Database, Flag,
+  ArrowDownLeft, ArrowUpRight, Clock, History, Filter
 } from 'lucide-react';
 import { 
   SUPPORTED_NETWORKS, DEFAULT_INCIDENT, 
@@ -20,6 +21,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
   const [flagRecord, setFlagRecord] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const [copiedKey, setCopiedKey] = useState(null);
+  const [txFilter, setTxFilter] = useState('ALL'); // ALL, IN, OUT
 
   useEffect(() => {
     if (initialTarget) {
@@ -43,10 +45,8 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
 
     try {
       if (type === 'wallet') {
-        // 1. Live on-chain query
         const res = await scanWalletLive(rawTarget, net);
         
-        // 2. Check if address is flagged in Supabase
         const isFlagged = await dbService.isWalletFlagged(rawTarget);
         if (isFlagged) {
           res.riskScore = 100;
@@ -76,11 +76,24 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
     }
   };
 
+  const handleTraceSingleTx = (hash) => {
+    setScanType('tx');
+    setQueryInput(hash);
+    handleRunForensics(hash, 'tx', selectedNetwork);
+    window.scrollTo({ top: 100, behavior: 'smooth' });
+  };
+
   const copyToClipboard = (text, key) => {
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(null), 2000);
   };
+
+  const filteredTransactions = (walletResult?.transactions || []).filter(tx => {
+    if (txFilter === 'IN') return tx.direction === 'IN';
+    if (txFilter === 'OUT') return tx.direction === 'OUT';
+    return true;
+  });
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
@@ -89,13 +102,13 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
       <div className="text-center space-y-3">
         <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 text-xs font-mono border border-amber-500/20">
           <Activity className="w-3.5 h-3.5" />
-          <span>Real-Time Scammer Detection & Multi-Chain Forensics</span>
+          <span>Real-Time Scammer Detection, Balance Audit & Transaction History</span>
         </div>
         <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
           Flagged Scammer Tracker & Forensics
         </h1>
         <p className="text-slate-400 max-w-2xl mx-auto text-sm sm:text-base">
-          Scan any cryptocurrency wallet address to identify flagged scammers, verify burner/sweep status, and trace funds to exchange KYC endpoints.
+          Scan any cryptocurrency wallet address to view live on-chain balances, audit full transaction histories, verify burner status, and trace funds.
         </p>
       </div>
 
@@ -120,7 +133,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
               type="button"
               onClick={() => {
                 setScanType('tx');
-                setQueryInput('0x44e5dbb257694dd3297e3a24808a6098f2bce9816bc9b202879104dccec911e7');
+                setQueryInput('0x1adaa8a8cec1206ba810c7bd669072971a01fde7d424c9801b0f1cc6b67f1842');
               }}
               className={`px-4 py-1.5 rounded-lg text-xs font-mono font-semibold transition ${
                 scanType === 'tx' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-400 hover:text-white'
@@ -181,7 +194,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
               {isScanning ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Querying Nodes...</span>
+                  <span>Querying Nodes & Ledger...</span>
                 </>
               ) : (
                 <>
@@ -204,7 +217,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
       )}
 
       {/* ======================================================== */}
-      {/* 1. LIVE WALLET SCAN RESULTS */}
+      {/* 1. LIVE WALLET SCAN RESULTS & TRANSACTION HISTORY */}
       {/* ======================================================== */}
       {walletResult && (
         <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-2xl space-y-6 animate-fadeIn">
@@ -323,6 +336,138 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
             </div>
           </div>
 
+          {/* ======================================================== */}
+          {/* ON-CHAIN TRANSACTION HISTORY SECTION */}
+          {/* ======================================================== */}
+          <div className="p-5 rounded-2xl bg-[#0a0d14] border border-slate-800 space-y-4">
+            
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div className="flex items-center space-x-2">
+                <History className="w-4 h-4 text-amber-400" />
+                <h4 className="text-sm font-mono font-bold text-white uppercase">
+                  On-Chain Transaction History ({walletResult.transactions.length})
+                </h4>
+              </div>
+
+              {/* Filter Tabs */}
+              <div className="flex space-x-1">
+                <button
+                  onClick={() => setTxFilter('ALL')}
+                  className={`px-3 py-1 rounded-lg text-xs font-mono font-semibold transition ${
+                    txFilter === 'ALL' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  All ({walletResult.transactions.length})
+                </button>
+                <button
+                  onClick={() => setTxFilter('IN')}
+                  className={`px-3 py-1 rounded-lg text-xs font-mono font-semibold transition ${
+                    txFilter === 'IN' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Inbound (+)
+                </button>
+                <button
+                  onClick={() => setTxFilter('OUT')}
+                  className={`px-3 py-1 rounded-lg text-xs font-mono font-semibold transition ${
+                    txFilter === 'OUT' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Outbound (-)
+                </button>
+              </div>
+            </div>
+
+            {filteredTransactions.length === 0 ? (
+              <div className="p-6 text-center text-slate-500 text-xs font-mono">
+                No recent transaction history recorded on {walletResult.network}.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead className="text-slate-500 border-b border-slate-800/80 bg-slate-950/60">
+                    <tr>
+                      <th className="p-3">Type</th>
+                      <th className="p-3">Amount & Token</th>
+                      <th className="p-3">Counterparty Address</th>
+                      <th className="p-3">Transaction Hash</th>
+                      <th className="p-3">Time</th>
+                      <th className="p-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/50 text-slate-300">
+                    {filteredTransactions.map((tx, idx) => (
+                      <tr key={idx} className="hover:bg-slate-900/60 transition">
+                        <td className="p-3">
+                          <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded font-bold ${
+                            tx.direction === 'IN' 
+                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25' 
+                              : 'bg-rose-500/15 text-rose-400 border border-rose-500/25'
+                          }`}>
+                            {tx.direction === 'IN' ? <ArrowDownLeft className="w-3 h-3" /> : <ArrowUpRight className="w-3 h-3" />}
+                            <span>{tx.direction === 'IN' ? 'RECEIVED' : 'SENT / SWEPT'}</span>
+                          </span>
+                        </td>
+
+                        <td className="p-3 font-bold">
+                          <span className={tx.direction === 'IN' ? 'text-emerald-400' : 'text-rose-400'}>
+                            {tx.formattedAmount}
+                          </span>
+                        </td>
+
+                        <td className="p-3">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-slate-200 truncate max-w-[200px]" style={{ color: tx.counterpartyEntity.color }}>
+                              {tx.counterpartyEntity.name}
+                            </span>
+                            <span className="text-[11px] text-slate-500 truncate max-w-[200px] select-all">
+                              {tx.counterparty}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td className="p-3">
+                          <div className="flex items-center space-x-1.5">
+                            <a
+                              href={tx.explorerUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-sky-400 hover:underline font-mono truncate max-w-[120px]"
+                            >
+                              {tx.hash.slice(0, 10)}...{tx.hash.slice(-6)}
+                            </a>
+                            <button
+                              onClick={() => copyToClipboard(tx.hash, `tx-${idx}`)}
+                              className="text-slate-500 hover:text-white p-0.5"
+                              title="Copy TXID"
+                            >
+                              {copiedKey === `tx-${idx}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                            </button>
+                          </div>
+                        </td>
+
+                        <td className="p-3 text-slate-400 whitespace-nowrap">
+                          {new Date(tx.timeStamp).toLocaleDateString()} {new Date(tx.timeStamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+
+                        <td className="p-3 text-right">
+                          <button
+                            onClick={() => handleTraceSingleTx(tx.hash)}
+                            className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-[11px] font-semibold transition inline-flex items-center space-x-1"
+                          >
+                            <span>Trace TX</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+          </div>
+
           {/* Actions */}
           <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
             <button
@@ -413,7 +558,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
             <div>
               <h3 className="text-lg font-bold text-white">Verified Incident Forensics: Atlas Capture</h3>
-              <p className="text-xs text-slate-400">On-chain hop sequence leading to Binance de-anonymization</p>
+              <p className="text-xs text-slate-400">On-chain hop sequence leading to de-anonymization</p>
             </div>
             <button
               onClick={() => onGenerateReport && onGenerateReport()}
@@ -437,7 +582,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
                 <p className="text-xs text-slate-400 mt-1">Legitimate contractor payout release</p>
               </div>
               <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs font-mono text-sky-300">
-                Transfer: <b>$146.07 USDT</b>
+                Transfer: <b>$146.07 USDC</b>
               </div>
             </div>
 
@@ -453,7 +598,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
                 <p className="text-xs font-mono text-red-300 mt-1">0xd23Ac2...236b</p>
               </div>
               <div className="p-2.5 rounded-lg bg-red-950/30 border border-red-900/40 text-xs font-mono text-red-300">
-                Status: <b>Drained ($0.00) &rarr; Swept to Binance</b>
+                Status: <b>Drained ($0.00) &rarr; Swept to 0xdb25...7857</b>
               </div>
             </div>
 
@@ -463,13 +608,13 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
               </div>
               <div>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                  CEX ENDPOINT (KYC ATTACHED)
+                  RECEIVER ENDPOINT (KYC ATTACHED)
                 </span>
-                <h4 className="text-base font-bold text-white mt-1">Binance Deposit Cluster</h4>
-                <p className="text-xs text-slate-400 mt-1">Directly tied to verified ID / passport</p>
+                <h4 className="text-base font-bold text-white mt-1">Receiver Address</h4>
+                <p className="text-xs text-slate-400 mt-1">0xdb2543...7857</p>
               </div>
               <div className="p-2.5 rounded-lg bg-amber-950/30 border border-amber-900/40 text-xs font-mono text-amber-300">
-                De-Anonymization: <b>Actionable via LER Subpoena</b>
+                De-Anonymization: <b>Actionable via Subpoena</b>
               </div>
             </div>
           </div>
