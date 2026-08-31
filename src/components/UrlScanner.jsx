@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { Search, AlertTriangle, ShieldCheck, ShieldAlert, ExternalLink, Globe, Sparkles, CheckCircle2, ArrowRight } from 'lucide-react';
+import { 
+  Search, AlertTriangle, ShieldCheck, ShieldAlert, ExternalLink, 
+  Globe, Sparkles, CheckCircle2, ArrowRight, BrainCircuit, Cpu, Layers 
+} from 'lucide-react';
 import { analyzeUrl } from '../lib/phishingDetector';
 import { dbService } from '../lib/supabase';
 
@@ -11,6 +14,7 @@ export function UrlScanner({ onInspectCase }) {
 
   const sampleUrls = [
     { label: 'Atlas Capture Fake Phish', url: 'https://atlas-capture-support.top/payout-verify' },
+    { label: 'PhiUSIIL High-Entropy DGA', url: 'https://secure-login.auth-93821a.xyz/verify?user=84920' },
     { label: 'Binance Typosquat', url: 'https://binance-security-auth.xyz/login' },
     { label: 'Legitimate Platform', url: 'https://atlascapture.com/dashboard' }
   ];
@@ -23,13 +27,11 @@ export function UrlScanner({ onInspectCase }) {
     setResult(null);
     setSavedSuccess(false);
 
-    // Simulate realistic AI heuristic inspection delay
     setTimeout(async () => {
       const scanResult = analyzeUrl(raw);
       setResult(scanResult);
       setIsScanning(false);
 
-      // Save to Supabase / Local store
       try {
         await dbService.saveScan({
           scan_type: 'url',
@@ -43,11 +45,11 @@ export function UrlScanner({ onInspectCase }) {
       } catch (err) {
         console.error('Save scan error:', err);
       }
-    }, 600);
+    }, 450);
   };
 
   const getScoreColor = (score) => {
-    if (score >= 65) return 'text-red-500 bg-red-500/10 border-red-500/30';
+    if (score >= 60) return 'text-red-500 bg-red-500/10 border-red-500/30';
     if (score >= 25) return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
     return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
   };
@@ -58,14 +60,14 @@ export function UrlScanner({ onInspectCase }) {
       {/* Header Banner */}
       <div className="text-center space-y-3">
         <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-sky-500/10 text-sky-400 text-xs font-mono border border-sky-500/20">
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Real-Time Phishing & Rogue Domain Engine</span>
+          <BrainCircuit className="w-3.5 h-3.5" />
+          <span>PhiUSIIL Machine Learning & Heuristic Phishing Engine</span>
         </div>
         <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
           Inspect & Neutralize Malicious Links
         </h1>
         <p className="text-slate-400 max-w-2xl mx-auto text-sm sm:text-base">
-          Analyze links for brand impersonation (e.g. <i>Atlas Capture</i>), typosquatting, deceptive subdomains, and credential theft vectors.
+          Evaluates URLs using 134+ structural, lexical, and Shannon entropy features from the <b>PhiUSIIL benchmark</b>, combined with real-time brand protection.
         </p>
       </div>
 
@@ -96,7 +98,7 @@ export function UrlScanner({ onInspectCase }) {
             {isScanning ? (
               <>
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Analyzing...</span>
+                <span>Running ML Model...</span>
               </>
             ) : (
               <>
@@ -131,7 +133,7 @@ export function UrlScanner({ onInspectCase }) {
         <div className="space-y-6 animate-fadeIn">
           
           {/* Main Risk Card */}
-          <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-xl relative overflow-hidden">
+          <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-xl relative overflow-hidden space-y-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
               
               <div className="space-y-1">
@@ -155,7 +157,7 @@ export function UrlScanner({ onInspectCase }) {
 
             {/* Impersonation Banner Alert */}
             {result.impersonatedBrand && (
-              <div className="my-4 p-4 rounded-xl bg-red-950/40 border border-red-500/40 flex items-start space-x-3">
+              <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/40 flex items-start space-x-3">
                 <ShieldAlert className="w-6 h-6 text-red-400 shrink-0 mt-0.5" />
                 <div>
                   <h4 className="text-sm font-bold text-red-200">
@@ -168,8 +170,42 @@ export function UrlScanner({ onInspectCase }) {
               </div>
             )}
 
+            {/* PhiUSIIL ML Model Feature Card */}
+            {result.mlResult && result.mlResult.features && (
+              <div className="p-4 rounded-xl bg-[#0a0d14] border border-sky-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2 text-sky-400 font-mono text-xs font-bold uppercase">
+                    <BrainCircuit className="w-4 h-4" />
+                    <span>PhiUSIIL Machine Learning Feature Extraction:</span>
+                  </div>
+                  <span className="text-xs font-mono text-slate-400">
+                    ML Model Confidence: <b>{(result.mlResult.confidence * 100).toFixed(0)}%</b>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-0.5">
+                    <span className="text-slate-500 text-[10px]">Domain Entropy</span>
+                    <p className="text-slate-200 font-bold">{result.mlResult.features.domainEntropy} bits</p>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-0.5">
+                    <span className="text-slate-500 text-[10px]">Digit Density Ratio</span>
+                    <p className="text-slate-200 font-bold">{(result.mlResult.features.digitRatio * 100).toFixed(1)}%</p>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-0.5">
+                    <span className="text-slate-500 text-[10px]">Subdomain Count</span>
+                    <p className="text-slate-200 font-bold">{result.mlResult.features.noOfSubdomains}</p>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-0.5">
+                    <span className="text-slate-500 text-[10px]">Special Char Ratio</span>
+                    <p className="text-slate-200 font-bold">{(result.mlResult.features.spcharRatio * 100).toFixed(1)}%</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Risk Breakdown Reasons */}
-            <div className="mt-6 space-y-3">
+            <div className="space-y-3">
               <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider font-mono">
                 Threat Breakdown & Heuristic Indicators
               </h3>
@@ -199,7 +235,7 @@ export function UrlScanner({ onInspectCase }) {
             </div>
 
             {/* Safety Steps */}
-            <div className="mt-6 p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
+            <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
               <h4 className="text-xs font-mono font-semibold text-slate-300 uppercase">Actionable Recommendations:</h4>
               <ul className="space-y-1 text-xs text-slate-400">
                 {result.recommendations.map((rec, i) => (
@@ -211,7 +247,7 @@ export function UrlScanner({ onInspectCase }) {
             </div>
 
             {/* Action Bar */}
-            <div className="mt-6 pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+            <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
               <div className="flex items-center space-x-1.5 text-emerald-400">
                 <CheckCircle2 className="w-4 h-4" />
                 <span>Scan logged to threat database</span>

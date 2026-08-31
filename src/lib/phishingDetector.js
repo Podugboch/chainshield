@@ -1,6 +1,4 @@
-/**
- * Phishing & Malicious Link / Message Analysis Engine
- */
+import { classifyUrlML } from './mlPhishingClassifier';
 
 export const KNOWN_TRUSTED_BRANDS = [
   { name: 'Atlas Capture', domains: ['atlascapture.com', 'atlascapture.io', 'app.atlascapture.com'] },
@@ -55,45 +53,32 @@ export function analyzeUrl(rawUrl) {
       isValid: false,
       riskScore: 100,
       riskLevel: 'MALICIOUS',
-      reasons: ['Malformed URL structure.'],
+      reasons: [{ category: 'Structure', severity: 'critical', text: 'Malformed URL structure' }],
       recommendations: ['Do NOT navigate to this address.']
     };
   }
 
   const hostname = parsed.hostname.toLowerCase();
-  const pathAndQuery = (parsed.pathname + parsed.search).toLowerCase();
   const fullUrl = parsed.toString().toLowerCase();
 
-  let riskScore = 0;
+  // 1. Run PhiUSIIL ML Ensemble Classifier
+  const mlResult = classifyUrlML(formattedUrl);
+
+  let riskScore = mlResult.mlRiskScore;
   const reasons = [];
   const flags = [];
   let impersonatedBrand = null;
 
-  // 1. IP Address check
-  const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-  if (ipRegex.test(hostname)) {
-    riskScore += 45;
+  // Add ML Key Drivers
+  mlResult.keyDrivers.forEach(driver => {
     reasons.push({
-      category: 'Network Host',
-      severity: 'high',
-      text: 'Direct IPv4 address used instead of a registered domain name (common in unindexed phishing hosting).'
-    });
-    flags.push('RAW_IP_HOST');
-  }
-
-  // 2. TLD Check
-  const matchedTld = SUSPICIOUS_TLDS.find(tld => hostname.endsWith(tld));
-  if (matchedTld) {
-    riskScore += 25;
-    reasons.push({
-      category: 'Domain Registry',
+      category: 'PhiUSIIL ML Feature',
       severity: 'medium',
-      text: `High-risk throwaway TLD (${matchedTld}) often used in disposable scam campaigns.`
+      text: driver
     });
-    flags.push('SUSPICIOUS_TLD');
-  }
+  });
 
-  // 3. Brand Impersonation & Typosquatting Check
+  // 2. High-Precision Brand Impersonation & Typosquatting Check
   const cleanHost = hostname.replace(/[-_.]/g, '');
   for (const brand of KNOWN_TRUSTED_BRANDS) {
     const isOfficial = brand.domains.some(d => hostname === d || hostname.endsWith('.' + d));
@@ -101,9 +86,9 @@ export function analyzeUrl(rawUrl) {
 
     if (!isOfficial) {
       if (hostname.includes(brandSlug) || cleanHost.includes(brandSlug)) {
-        riskScore += 55;
+        riskScore = Math.max(riskScore, 95);
         impersonatedBrand = brand.name;
-        reasons.push({
+        reasons.unshift({
           category: 'Brand Impersonation',
           severity: 'critical',
           text: `Critical: URL claims to be '${brand.name}' but is hosted on an unofficial rogue domain (${hostname})!`
@@ -112,12 +97,12 @@ export function analyzeUrl(rawUrl) {
       } else {
         const dist = levenshteinDistance(brandSlug, cleanHost.slice(0, brandSlug.length + 3));
         if (dist > 0 && dist <= 2) {
-          riskScore += 40;
+          riskScore = Math.max(riskScore, 85);
           impersonatedBrand = brand.name;
-          reasons.push({
+          reasons.unshift({
             category: 'Typosquatting',
-            severity: 'high',
-            text: `Typosquatting detected: '${hostname}' visually mimics '${brand.name}' with slight character variations.`
+            severity: 'critical',
+            text: `Typosquatting detected: '${hostname}' visually mimics '${brand.name}' with slight character mutations.`
           });
           flags.push('TYPOSQUATTING');
         }
@@ -125,32 +110,22 @@ export function analyzeUrl(rawUrl) {
     }
   }
 
-  // 4. Excessive Subdomains or Hyphen Masking
-  const subdomainsCount = hostname.split('.').length - 2;
-  if (subdomainsCount >= 2) {
-    riskScore += 15;
+  // 3. TLD Verification
+  const matchedTld = SUSPICIOUS_TLDS.find(tld => hostname.endsWith(tld));
+  if (matchedTld) {
+    riskScore = Math.min(100, riskScore + 15);
     reasons.push({
-      category: 'Subdomain Masking',
+      category: 'Domain Registry',
       severity: 'medium',
-      text: `Contains ${subdomainsCount} nested subdomains to disguise the real parent domain.`
+      text: `High-risk throwaway TLD (${matchedTld}) associated with disposable phishing campaigns.`
     });
-    flags.push('EXCESSIVE_SUBDOMAINS');
+    flags.push('SUSPICIOUS_TLD');
   }
 
-  if ((hostname.match(/-/g) || []).length >= 2) {
-    riskScore += 15;
-    reasons.push({
-      category: 'Domain Crafting',
-      severity: 'medium',
-      text: 'Multiple hyphens used to fabricate an official-looking corporate domain name.'
-    });
-    flags.push('MULTIPLE_HYPHENS');
-  }
-
-  // 5. Keyword Triggers in Path / URL
+  // 4. Keyword Triggers
   const foundKeywords = PHISHING_KEYWORDS.filter(kw => fullUrl.includes(kw));
   if (foundKeywords.length > 0) {
-    riskScore += 20;
+    riskScore = Math.min(100, riskScore + 15);
     reasons.push({
       category: 'Deceptive Path',
       severity: 'medium',
@@ -159,14 +134,12 @@ export function analyzeUrl(rawUrl) {
     flags.push('DECEPTIVE_KEYWORDS');
   }
 
-  // Cap score between 0 and 100
-  riskScore = Math.min(100, riskScore);
+  riskScore = Math.min(100, Math.max(0, riskScore));
 
   let riskLevel = 'SAFE';
-  if (riskScore >= 65) riskLevel = 'MALICIOUS';
+  if (riskScore >= 60) riskLevel = 'MALICIOUS';
   else if (riskScore >= 25) riskLevel = 'SUSPICIOUS';
 
-  // Safety Recommendations
   const recommendations = [];
   if (riskLevel === 'MALICIOUS') {
     recommendations.push('🚨 DO NOT click or enter credentials/passwords on this link.');
@@ -176,7 +149,7 @@ export function analyzeUrl(rawUrl) {
     recommendations.push('⚠️ Verify the sender domain with official support before proceeding.');
     recommendations.push('🔎 Avoid connecting Web3 wallets or approving signature requests.');
   } else {
-    recommendations.push('✅ No obvious automated phishing heuristics triggered. Always double-check SSL certificates.');
+    recommendations.push('✅ No obvious automated phishing heuristics or ML risk signatures triggered.');
   }
 
   return {
@@ -190,21 +163,19 @@ export function analyzeUrl(rawUrl) {
     reasons,
     flags,
     recommendations,
+    mlResult,
     timestamp: new Date().toISOString()
   };
 }
 
 export function analyzeMessage(text) {
-  if (!text || text.trim().length === 0) {
-    return null;
-  }
+  if (!text || text.trim().length === 0) return null;
 
   let riskScore = 0;
   const reasons = [];
   const flags = [];
   const lowerText = text.toLowerCase();
 
-  // 1. Urgency / Coercion Patterns
   const urgencyTriggers = [
     'immediate action', 'suspended within 24 hours', 'within 12 hours', 'urgent update', 
     'account termination', 'verify immediately', 'funds frozen', 'failure to respond'
@@ -220,7 +191,6 @@ export function analyzeMessage(text) {
     flags.push('URGENCY_MANIPULATION');
   }
 
-  // 2. Financial / Wallet / Payout Manipulation
   const walletTriggers = [
     'update payout address', 'change wallet', 'usdt address', 'erc-20', 'erc20', 
     'connect metamask', 're-link wallet', 'pending withdrawal', 'payment hold'
@@ -236,7 +206,6 @@ export function analyzeMessage(text) {
     flags.push('PAYOUT_MANIPULATION');
   }
 
-  // 3. Extract Embedded Links
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const extractedUrls = text.match(urlRegex) || [];
   let urlScans = [];
@@ -254,7 +223,6 @@ export function analyzeMessage(text) {
     }
   }
 
-  // 4. Impersonation of Platforms like Atlas Capture
   if (lowerText.includes('atlas capture') || lowerText.includes('atlascapture')) {
     if (matchedWallet.length > 0 || matchedUrgency.length > 0 || extractedUrls.length > 0) {
       riskScore += 25;
