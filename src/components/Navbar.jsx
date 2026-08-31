@@ -1,8 +1,7 @@
 import React from 'react';
-import { Shield, ShieldAlert, Activity, Database, FileText, ShieldBan, DatabaseZap } from 'lucide-react';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { Shield, ShieldAlert, Activity, Database, FileText, ShieldBan } from 'lucide-react';
 
-export function Navbar({ activeTab, setActiveTab, onOpenSupabaseModal }) {
+export function Navbar({ activeTab, setActiveTab }) {
   const navItems = [
     { id: 'url-scanner', label: 'Link Scanner', icon: Shield },
     { id: 'message-scanner', label: 'Message & Email AI', icon: ShieldAlert },
@@ -44,7 +43,7 @@ export function Navbar({ activeTab, setActiveTab, onOpenSupabaseModal }) {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                  className={`flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-all ${
                     isActive
                       ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30 shadow-sm'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
@@ -56,20 +55,6 @@ export function Navbar({ activeTab, setActiveTab, onOpenSupabaseModal }) {
               );
             })}
           </nav>
-
-          {/* Right Action: Supabase Status */}
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={onOpenSupabaseModal}
-              className="flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-mono border transition-all bg-slate-900/80 hover:bg-slate-800 border-slate-700 text-slate-300"
-              title="Configure Supabase Database"
-            >
-              <DatabaseZap className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">Supabase:</span>
-              <span className={`inline-block w-2 h-2 rounded-full ${isSupabaseConfigured ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-              <span>{isSupabaseConfigured ? 'Connected' : 'Local Mode'}</span>
-            </button>
-          </div>
 
         </div>
 
