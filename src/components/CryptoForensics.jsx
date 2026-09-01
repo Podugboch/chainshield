@@ -3,12 +3,13 @@ import {
   Activity, Search, ArrowRight, ShieldAlert, Building2, Briefcase, 
   ExternalLink, Copy, Check, Download, AlertTriangle, RefreshCw, 
   CheckCircle2, Coins, Flame, Layers, ShieldCheck, Database, Flag,
-  ArrowDownLeft, ArrowUpRight, Clock, History, Filter
+  ArrowDownLeft, ArrowUpRight, Clock, History, Filter, Shield, Code2, AlertCircle
 } from 'lucide-react';
 import { 
   SUPPORTED_NETWORKS, DEFAULT_INCIDENT, 
   scanWalletLive, scanTransactionLive, identifyEntity 
 } from '../lib/blockchainForensics';
+import { GOPLUS_CHAINS } from '../lib/goplusSecurity';
 import { dbService } from '../lib/supabase';
 
 export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarget = '' }) {
@@ -21,7 +22,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
   const [flagRecord, setFlagRecord] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const [copiedKey, setCopiedKey] = useState(null);
-  const [txFilter, setTxFilter] = useState('ALL'); // ALL, IN, OUT
+  const [txFilter, setTxFilter] = useState('ALL');
 
   useEffect(() => {
     if (initialTarget) {
@@ -101,14 +102,14 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
       {/* Top Banner */}
       <div className="text-center space-y-3">
         <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 text-xs font-mono border border-amber-500/20">
-          <Activity className="w-3.5 h-3.5" />
-          <span>Real-Time Scammer Detection, Balance Audit & Transaction History</span>
+          <Shield className="w-3.5 h-3.5" />
+          <span>GoPlus Multi-Chain Security, Honeypot Detection & Forensics</span>
         </div>
         <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-          Flagged Scammer Tracker & Forensics
+          Multi-Chain Asset Security & Forensics
         </h1>
         <p className="text-slate-400 max-w-2xl mx-auto text-sm sm:text-base">
-          Scan any cryptocurrency wallet address to view live on-chain balances, audit full transaction histories, verify burner status, and trace funds.
+          Scan contract addresses, wallets, and transactions across <b>Ethereum, BSC, Polygon, Arbitrum, Base, Avalanche</b> with automated honeypot tests, tax audits, and threat heuristics.
         </p>
       </div>
 
@@ -127,7 +128,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
                 scanType === 'wallet' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-400 hover:text-white'
               }`}
             >
-              Scan Wallet Address
+              Scan Wallet / Token Contract
             </button>
             <button
               type="button"
@@ -153,7 +154,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
           </button>
         </div>
 
-        {/* Input Form */}
+        {/* Input Form with Multi-Chain Switcher */}
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -169,7 +170,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
             >
               {Object.entries(SUPPORTED_NETWORKS).map(([key, net]) => (
                 <option key={key} value={key}>
-                  {net.name}
+                  {net.name} (Chain ID: {net.chainId})
                 </option>
               ))}
             </select>
@@ -178,7 +179,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
           <div className="md:col-span-2">
             <input
               type="text"
-              placeholder={scanType === 'wallet' ? 'Enter 0x address (e.g. 0xd23Ac2...)' : 'Enter 0x transaction hash...'}
+              placeholder={scanType === 'wallet' ? 'Enter 0x wallet or contract address...' : 'Enter 0x transaction hash...'}
               value={queryInput}
               onChange={(e) => setQueryInput(e.target.value)}
               className="w-full py-3 px-4 bg-[#0a0d14] border border-slate-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:border-amber-500"
@@ -194,7 +195,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
               {isScanning ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Querying Nodes & Ledger...</span>
+                  <span>Auditing Asset...</span>
                 </>
               ) : (
                 <>
@@ -217,7 +218,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
       )}
 
       {/* ======================================================== */}
-      {/* 1. LIVE WALLET SCAN RESULTS & TRANSACTION HISTORY */}
+      {/* 1. LIVE WALLET & CONTRACT SCAN RESULTS */}
       {/* ======================================================== */}
       {walletResult && (
         <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-2xl space-y-6 animate-fadeIn">
@@ -237,11 +238,6 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
                   <p className="text-xs text-red-200/90 mt-1">
                     This wallet is actively flagged for <b>{flagRecord.scam_category}</b>. Total verified losses: <b>${Number(flagRecord.total_stolen_usd || 0).toFixed(2)} USD</b>.
                   </p>
-                  {flagRecord.destination_entity && (
-                    <p className="text-xs text-amber-300 font-mono mt-1">
-                      Target Cashout Gateway: <b>{flagRecord.destination_entity}</b>
-                    </p>
-                  )}
                 </div>
               </div>
 
@@ -250,7 +246,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
                 className="px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl transition shadow-lg shadow-red-600/30 flex items-center space-x-2 shrink-0"
               >
                 <Download className="w-4 h-4" />
-                <span>Export Binance / Police Case</span>
+                <span>Export Police Case</span>
               </button>
             </div>
           )}
@@ -259,8 +255,8 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-6 border-b border-slate-800">
             <div className="space-y-1">
               <div className="flex items-center space-x-2">
-                <span className="text-xs font-mono text-slate-400">TARGET WALLET:</span>
-                <span className="text-xs font-mono font-bold text-red-400 bg-red-950/40 px-2 py-0.5 rounded border border-red-900/40 select-all">
+                <span className="text-xs font-mono text-slate-400">TARGET ASSET:</span>
+                <span className="text-xs font-mono font-bold text-amber-400 bg-amber-950/40 px-2 py-0.5 rounded border border-amber-900/40 select-all">
                   {walletResult.address}
                 </span>
               </div>
@@ -275,11 +271,80 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
                 walletResult.riskLevel === 'SUSPICIOUS' ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' :
                 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
               }`}>
-                <div className="text-[10px] uppercase tracking-wider">{walletResult.riskLevel} RISK</div>
+                <div className="text-[10px] uppercase tracking-wider">{walletResult.riskLevel}</div>
                 <div className="text-xl font-extrabold">{walletResult.riskScore}/100</div>
               </div>
             </div>
           </div>
+
+          {/* ======================================================== */}
+          {/* GOPLUS MULTI-CHAIN SECURITY AUDIT PANEL */}
+          {/* ======================================================== */}
+          {walletResult.goplusAudit && (
+            <div className="p-5 rounded-2xl bg-[#0a0d14] border border-sky-500/30 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+                <div className="flex items-center space-x-2">
+                  <Shield className="w-4 h-4 text-sky-400" />
+                  <h4 className="text-xs font-mono font-bold text-sky-300 uppercase">
+                    GoPlus Security Multi-Chain Audit ({walletResult.goplusAudit.networkName})
+                  </h4>
+                </div>
+                <span className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase border ${
+                  walletResult.goplusAudit.riskLevel === 'CRITICAL MALICIOUS' ? 'bg-red-500/15 text-red-400 border-red-500/30' :
+                  walletResult.goplusAudit.riskLevel === 'HIGH RISK' ? 'bg-orange-500/15 text-orange-400 border-orange-500/30' :
+                  walletResult.goplusAudit.riskLevel === 'SUSPICIOUS' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' :
+                  'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                }`}>
+                  {walletResult.goplusAudit.riskLevel}
+                </span>
+              </div>
+
+              {/* Metrics Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                  <span className="text-slate-500 text-[10px]">Honeypot Test</span>
+                  <p className={`font-bold ${walletResult.goplusAudit.metrics.isHoneypot ? 'text-red-400' : 'text-emerald-400'}`}>
+                    {walletResult.goplusAudit.metrics.isHoneypot ? '🚨 HONEYPOT DETECTED' : '✅ PASSED (CAN SELL)'}
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                  <span className="text-slate-500 text-[10px]">Buy / Sell Tax</span>
+                  <p className="text-slate-200 font-bold">
+                    Buy: {walletResult.goplusAudit.metrics.buyTax}% | Sell: {walletResult.goplusAudit.metrics.sellTax}%
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                  <span className="text-slate-500 text-[10px]">Open Source Contract</span>
+                  <p className={`font-bold ${walletResult.goplusAudit.metrics.isOpenSource ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {walletResult.goplusAudit.metrics.isOpenSource ? '✅ VERIFIED' : '⚠️ UNVERIFIED'}
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                  <span className="text-slate-500 text-[10px]">Phishing / Drainer Flags</span>
+                  <p className={`font-bold ${walletResult.goplusAudit.metrics.isPhishing || walletResult.goplusAudit.metrics.isStealingAttack ? 'text-red-400' : 'text-emerald-400'}`}>
+                    {walletResult.goplusAudit.metrics.isPhishing || walletResult.goplusAudit.metrics.isStealingAttack ? '🚨 FLAGGED' : '✅ CLEAN'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Risk Flags Rationale */}
+              {walletResult.goplusAudit.flags.length > 0 && (
+                <div className="space-y-2 pt-1">
+                  {walletResult.goplusAudit.flags.map((f, i) => (
+                    <div key={i} className="p-3 rounded-xl bg-red-950/30 border border-red-500/30 text-xs font-mono text-red-200 flex items-start space-x-2">
+                      <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                      <div>
+                        <b>{f.title}:</b> {f.description}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* On-Chain Metrics Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -336,11 +401,8 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
             </div>
           </div>
 
-          {/* ======================================================== */}
-          {/* ON-CHAIN TRANSACTION HISTORY SECTION */}
-          {/* ======================================================== */}
+          {/* On-Chain Transaction History */}
           <div className="p-5 rounded-2xl bg-[#0a0d14] border border-slate-800 space-y-4">
-            
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
               <div className="flex items-center space-x-2">
                 <History className="w-4 h-4 text-amber-400" />
@@ -349,7 +411,6 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
                 </h4>
               </div>
 
-              {/* Filter Tabs */}
               <div className="flex space-x-1">
                 <button
                   onClick={() => setTxFilter('ALL')}
@@ -483,7 +544,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
               className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-semibold text-xs rounded-xl transition shadow-lg shadow-amber-500/20 flex items-center space-x-2"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Generate Police / Binance Dossier</span>
+              <span>Generate Police Dossier</span>
             </button>
           </div>
 

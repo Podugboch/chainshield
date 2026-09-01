@@ -1,6 +1,8 @@
+import { scanGoPlusAsset } from './goplusSecurity';
+
 /**
  * Blockchain Forensics Engine
- * Real-Time Multi-Chain JSON-RPC Live Scanner, Transaction History Indexer & Entity Tracing
+ * Real-Time Multi-Chain JSON-RPC Live Scanner, Transaction History Indexer & GoPlus Security Audit
  */
 
 export const SUPPORTED_NETWORKS = {
@@ -8,6 +10,7 @@ export const SUPPORTED_NETWORKS = {
     id: 'ethereum',
     name: 'Ethereum Mainnet',
     currency: 'ETH',
+    chainId: '1',
     rpcUrls: [
       'https://ethereum-rpc.publicnode.com',
       'https://eth.llamarpc.com',
@@ -25,6 +28,7 @@ export const SUPPORTED_NETWORKS = {
     id: 'bsc',
     name: 'BNB Smart Chain (BSC)',
     currency: 'BNB',
+    chainId: '56',
     rpcUrls: [
       'https://bsc-rpc.publicnode.com',
       'https://bsc-dataseed1.binance.org',
@@ -41,6 +45,7 @@ export const SUPPORTED_NETWORKS = {
     id: 'polygon',
     name: 'Polygon (PoS)',
     currency: 'POL',
+    chainId: '137',
     rpcUrls: [
       'https://polygon-bor-rpc.publicnode.com',
       'https://polygon.llamarpc.com',
@@ -57,6 +62,7 @@ export const SUPPORTED_NETWORKS = {
     id: 'arbitrum',
     name: 'Arbitrum One',
     currency: 'ETH',
+    chainId: '42161',
     rpcUrls: [
       'https://arbitrum-one-rpc.publicnode.com',
       'https://arb1.arbitrum.io/rpc',
@@ -73,6 +79,7 @@ export const SUPPORTED_NETWORKS = {
     id: 'base',
     name: 'Base',
     currency: 'ETH',
+    chainId: '8453',
     rpcUrls: [
       'https://base-rpc.publicnode.com',
       'https://mainnet.base.org',
@@ -88,6 +95,7 @@ export const SUPPORTED_NETWORKS = {
     id: 'optimism',
     name: 'Optimism',
     currency: 'ETH',
+    chainId: '10',
     rpcUrls: [
       'https://optimism-rpc.publicnode.com',
       'https://mainnet.optimism.io'
@@ -128,9 +136,6 @@ export const DEFAULT_INCIDENT = {
 
 export const SAMPLE_INCIDENT = DEFAULT_INCIDENT;
 
-/**
- * Execute RPC call with automatic failover across fallback nodes
- */
 async function robustRpcCall(rpcUrls, method, params) {
   let lastError = null;
 
@@ -177,9 +182,6 @@ export function identifyEntity(address) {
   };
 }
 
-/**
- * Fetch Full On-Chain Transaction History for a Wallet
- */
 export async function fetchWalletTransactionHistory(rawAddress, networkKey = 'ethereum') {
   const address = rawAddress.trim().toLowerCase();
   const net = SUPPORTED_NETWORKS[networkKey] || SUPPORTED_NETWORKS.ethereum;
@@ -188,7 +190,6 @@ export async function fetchWalletTransactionHistory(rawAddress, networkKey = 'et
   if (!net.apiBase) return [];
 
   try {
-    // 1. Fetch Token Transfers (USDT, USDC, etc.)
     const tokenUrl = `${net.apiBase}?module=account&action=tokentx&address=${address}&sort=desc&page=1&offset=25`;
     const tokenResp = await fetch(tokenUrl);
     if (tokenResp.ok) {
@@ -221,7 +222,6 @@ export async function fetchWalletTransactionHistory(rawAddress, networkKey = 'et
       }
     }
 
-    // 2. Fetch Normal Native Transactions (ETH, BNB, etc.)
     const normalUrl = `${net.apiBase}?module=account&action=txlist&address=${address}&sort=desc&page=1&offset=15`;
     const normalResp = await fetch(normalUrl);
     if (normalResp.ok) {
@@ -255,7 +255,6 @@ export async function fetchWalletTransactionHistory(rawAddress, networkKey = 'et
       }
     }
 
-    // Sort by timestamp descending
     history.sort((a, b) => b.timeStamp - a.timeStamp);
     return history;
   } catch (err) {
@@ -264,9 +263,6 @@ export async function fetchWalletTransactionHistory(rawAddress, networkKey = 'et
   }
 }
 
-/**
- * Scan a single Wallet on a specific chain in real time
- */
 export async function scanWalletLive(rawAddress, networkKey = 'ethereum') {
   const address = rawAddress.trim();
   const net = SUPPORTED_NETWORKS[networkKey] || SUPPORTED_NETWORKS.ethereum;
@@ -281,6 +277,7 @@ export async function scanWalletLive(rawAddress, networkKey = 'ethereum') {
     nativeBalance: 0,
     tokenBalances: [],
     transactions: [],
+    goplusAudit: null,
     riskScore: 0,
     riskLevel: 'LOW',
     riskFlags: [],
@@ -352,7 +349,14 @@ export async function scanWalletLive(rawAddress, networkKey = 'ethereum') {
     console.warn('History query note:', e);
   }
 
-  // 6. Evaluate Forensic Risk Heuristics
+  // 6. Run GoPlus Security Multi-Chain Audit
+  try {
+    results.goplusAudit = await scanGoPlusAsset(address, networkKey);
+  } catch (e) {
+    console.warn('GoPlus audit note:', e);
+  }
+
+  // 7. Evaluate Forensic Risk Heuristics
   let score = 0;
 
   if (results.entity.type === 'FLAGGED_SCAMMER') {
@@ -379,15 +383,23 @@ export async function scanWalletLive(rawAddress, networkKey = 'ethereum') {
     });
   }
 
+  // Incorporate GoPlus score if present
+  if (results.goplusAudit && results.goplusAudit.riskScore > 0) {
+    score = Math.max(score, results.goplusAudit.riskScore);
+    results.goplusAudit.flags.forEach(f => {
+      results.riskFlags.push({
+        title: f.title,
+        description: f.description
+      });
+    });
+  }
+
   results.riskScore = Math.min(100, score);
-  results.riskLevel = results.riskScore >= 70 ? 'CRITICAL' : results.riskScore >= 30 ? 'SUSPICIOUS' : 'LOW';
+  results.riskLevel = results.riskScore >= 75 ? 'CRITICAL' : results.riskScore >= 40 ? 'SUSPICIOUS' : 'LOW';
 
   return results;
 }
 
-/**
- * Scan a single Transaction Hash across EVM networks
- */
 export async function scanTransactionLive(rawTxHash, networkKey = 'ethereum') {
   const txHash = rawTxHash.trim();
   const net = SUPPORTED_NETWORKS[networkKey] || SUPPORTED_NETWORKS.ethereum;
@@ -431,7 +443,6 @@ export async function scanTransactionLive(rawTxHash, networkKey = 'ethereum') {
 
         if (transferLogs.length > 0) {
           results.isTokenTransfer = true;
-          // Primary transfer log (highest value or targeted)
           const primaryLog = transferLogs[0];
           const sender = '0x' + primaryLog.topics[1].slice(26);
           const recipient = '0x' + primaryLog.topics[2].slice(26);
@@ -478,9 +489,6 @@ export async function scanTransactionLive(rawTxHash, networkKey = 'ethereum') {
   }
 }
 
-/**
- * Generate official Law Enforcement & Binance Dossier
- */
 export function generateLawEnforcementDossier(incident) {
   const dateStr = new Date().toUTCString();
   return `
@@ -500,10 +508,8 @@ and cryptocurrency payout redirection fraud targeting a user of the platform:
 "${incident.victimPlatform || 'Atlas Capture'}".
 
 The attacker deployed a deceptive impersonation link to gain access to the victim's
-account dashboard, removed the legitimate ERC-20 USDT payout address, and substituted
-their own intermediary wallet address. Upon execution of the contractual payout,
-the funds were deposited to the attacker's wallet and promptly forwarded to an
-external destination wallet: ${incident.destinationAddress || '0xdb2543...7857'}.
+account dashboard, removed the legitimate payout address, and substituted their own
+intermediary wallet address: ${incident.scammerAddress}.
 
 --------------------------------------------------------------------------------
 2. FINANCIAL LOSS & ASSET DETAILS
@@ -527,9 +533,7 @@ external destination wallet: ${incident.destinationAddress || '0xdb2543...7857'}
 --------------------------------------------------------------------------------
 4. PERPETRATOR DE-ANONYMIZATION VECTOR (EXCHANGE KYC)
 --------------------------------------------------------------------------------
-Because the funds were routed through centralized and account abstraction channels,
-the receiving wallet address is directly linked to exchange accounts and funding sources.
-Under standard KYC (Know Your Customer) regulations, exchanges hold:
+Under standard KYC regulations, exchanges and service providers hold:
   1. Full legal name & government-issued identification / passport
   2. Verified phone number & primary email address
   3. Residential billing address and linked banking / withdrawal details
