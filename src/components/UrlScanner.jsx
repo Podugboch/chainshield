@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { 
-  Search, AlertTriangle, ShieldCheck, ShieldAlert, ExternalLink, 
-  Globe, Sparkles, CheckCircle2, ArrowRight, BrainCircuit, Cpu, Layers 
+import {
+  Search, ShieldCheck, ShieldAlert, Globe, CheckCircle2, ArrowRight, Ruler,
 } from 'lucide-react';
 import { analyzeUrl } from '../lib/phishingDetector';
 import { dbService } from '../lib/supabase';
@@ -13,10 +12,11 @@ export function UrlScanner({ onInspectCase }) {
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const sampleUrls = [
-    { label: 'Atlas Capture Fake Phish', url: 'https://atlas-capture-support.top/payout-verify' },
-    { label: 'PhiUSIIL High-Entropy DGA', url: 'https://secure-login.auth-93821a.xyz/verify?user=84920' },
-    { label: 'Binance Typosquat', url: 'https://binance-security-auth.xyz/login' },
-    { label: 'Legitimate Platform', url: 'https://atlascapture.com/dashboard' }
+    { label: 'Atlas Capture lookalike', url: 'https://atlas-capture-support.top/payout-verify' },
+    { label: 'Homoglyph squat', url: 'https://binancé.com/login' },
+    { label: 'Brand in subdomain', url: 'http://coinbase.com-login-security.icu/authenticate' },
+    { label: 'Legitimate ccTLD site', url: 'https://www.google.co.uk' },
+    { label: 'Legitimate platform', url: 'https://atlascapture.com/dashboard' },
   ];
 
   const handleScan = async (targetToScan) => {
@@ -48,26 +48,36 @@ export function UrlScanner({ onInspectCase }) {
     }, 450);
   };
 
-  const getScoreColor = (score) => {
-    if (score >= 60) return 'text-red-500 bg-red-500/10 border-red-500/30';
-    if (score >= 25) return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+  const getScoreColor = (result_) => {
+    if (result_.riskLevel === 'UNKNOWN') return 'text-slate-300 bg-slate-500/10 border-slate-500/30';
+    if (result_.riskScore >= 60) return 'text-red-500 bg-red-500/10 border-red-500/30';
+    if (result_.riskScore >= 30) return 'text-amber-400 bg-amber-500/10 border-amber-500/30';
     return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+  };
+
+  const severityStyle = (severity) => {
+    if (severity === 'critical') return 'bg-red-500/20 text-red-400';
+    if (severity === 'high') return 'bg-orange-500/20 text-orange-400';
+    if (severity === 'medium') return 'bg-amber-500/20 text-amber-400';
+    return 'bg-slate-500/20 text-slate-400';
   };
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
-      
+
       {/* Header Banner */}
       <div className="text-center space-y-3">
         <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-sky-500/10 text-sky-400 text-xs font-mono border border-sky-500/20">
-          <BrainCircuit className="w-3.5 h-3.5" />
-          <span>PhiUSIIL Machine Learning & Heuristic Phishing Engine</span>
+          <Ruler className="w-3.5 h-3.5" />
+          <span>Brand-impersonation &amp; URL structure analysis</span>
         </div>
         <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-          Inspect & Neutralize Malicious Links
+          Inspect &amp; Neutralize Malicious Links
         </h1>
         <p className="text-slate-400 max-w-2xl mx-auto text-sm sm:text-base">
-          Evaluates URLs using 134+ structural, lexical, and Shannon entropy features from the <b>PhiUSIIL benchmark</b>, combined with real-time brand protection.
+          Resolves the real registrable domain through the Public Suffix List, decodes
+          internationalised hostnames, folds homoglyphs, and checks the result against a
+          verified-brand registry — so <b>google.co.uk</b> passes and <b>coinbase.com-login.icu</b> does not.
         </p>
       </div>
 
@@ -98,7 +108,7 @@ export function UrlScanner({ onInspectCase }) {
             {isScanning ? (
               <>
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Running ML Model...</span>
+                <span>Analyzing…</span>
               </>
             ) : (
               <>
@@ -140,14 +150,20 @@ export function UrlScanner({ onInspectCase }) {
                 <div className="flex items-center space-x-2">
                   <span className="text-xs font-mono text-slate-400">TARGET DOMAIN:</span>
                   <span className="text-sm font-mono font-bold text-white bg-slate-800 px-2 py-0.5 rounded">
-                    {result.hostname}
+                    {result.displayHost || result.hostname || '—'}
                   </span>
                 </div>
+                {result.registrableDomain && (
+                  <p className="text-xs text-slate-400 font-mono">
+                    Resolves to <b className="text-slate-200">{result.registrableDomain}</b>
+                    {' — this is the part that decides where you connect.'}
+                  </p>
+                )}
                 <p className="text-xs text-slate-400 font-mono break-all">{result.url}</p>
               </div>
 
               <div className="flex items-center space-x-4">
-                <div className={`px-4 py-2 rounded-xl font-bold font-mono text-center border ${getScoreColor(result.riskScore)}`}>
+                <div className={`px-4 py-2 rounded-xl font-bold font-mono text-center border ${getScoreColor(result)}`}>
                   <div className="text-xs uppercase tracking-wider">{result.riskLevel}</div>
                   <div className="text-2xl font-extrabold">{result.riskScore}/100</div>
                 </div>
@@ -155,50 +171,65 @@ export function UrlScanner({ onInspectCase }) {
 
             </div>
 
-            {/* Impersonation Banner Alert */}
-            {result.impersonatedBrand && (
+            {/* Brand relationship banner */}
+            {result.impersonatedBrand && result.brandStatus !== 'path-mention' && (
               <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/40 flex items-start space-x-3">
                 <ShieldAlert className="w-6 h-6 text-red-400 shrink-0 mt-0.5" />
                 <div>
                   <h4 className="text-sm font-bold text-red-200">
-                    High Alert: Unofficial Impersonation of {result.impersonatedBrand}
+                    This is not {result.impersonatedBrand}
                   </h4>
                   <p className="text-xs text-red-300/80 mt-1">
-                    This domain attempts to spoof legitimate contractors/users of <b>{result.impersonatedBrand}</b> to harvest credentials or modify payout cryptocurrency wallets.
+                    The name is built to read as <b>{result.impersonatedBrand}</b>, but{' '}
+                    <b className="font-mono">{result.registrableDomain}</b> is registered by
+                    someone else. Credentials, seed phrases or wallet approvals entered here go
+                    to whoever controls that domain.
                   </p>
                 </div>
               </div>
             )}
 
-            {/* PhiUSIIL ML Model Feature Card */}
-            {result.mlResult && result.mlResult.features && (
+            {result.brandStatus === 'brand-elsewhere' && (
+              <div className="p-4 rounded-xl bg-sky-950/40 border border-sky-500/30 flex items-start space-x-3">
+                <ShieldCheck className="w-5 h-5 text-sky-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-sky-200/90">
+                  <b className="font-mono">{result.registrableDomain}</b> carries the{' '}
+                  {result.impersonatedBrand || 'brand'} name on a suffix outside the verified
+                  list. Large brands run country domains that look exactly like this, so it is
+                  not treated as an attack — confirm it if you were not expecting it.
+                </p>
+              </div>
+            )}
+
+            {/* What was actually measured */}
+            {result.heuristics && (
               <div className="p-4 rounded-xl bg-[#0a0d14] border border-sky-500/30 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2 text-sky-400 font-mono text-xs font-bold uppercase">
-                    <BrainCircuit className="w-4 h-4" />
-                    <span>PhiUSIIL Machine Learning Feature Extraction:</span>
+                    <Ruler className="w-4 h-4" />
+                    <span>Measured URL structure</span>
                   </div>
                   <span className="text-xs font-mono text-slate-400">
-                    ML Model Confidence: <b>{(result.mlResult.confidence * 100).toFixed(0)}%</b>
+                    Structural score: <b>{result.heuristics.score}</b>/100
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
                   <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-0.5">
-                    <span className="text-slate-500 text-[10px]">Domain Entropy</span>
-                    <p className="text-slate-200 font-bold">{result.mlResult.features.domainEntropy} bits</p>
+                    <span className="text-slate-500 text-[10px]">Registered name entropy</span>
+                    <p className="text-slate-200 font-bold">{result.heuristics.features.labelEntropy} bits</p>
                   </div>
                   <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-0.5">
-                    <span className="text-slate-500 text-[10px]">Digit Density Ratio</span>
-                    <p className="text-slate-200 font-bold">{(result.mlResult.features.digitRatio * 100).toFixed(1)}%</p>
+                    <span className="text-slate-500 text-[10px]">Digits in host</span>
+                    <p className="text-slate-200 font-bold">{(result.heuristics.features.digitRatioHost * 100).toFixed(1)}%</p>
                   </div>
                   <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-0.5">
-                    <span className="text-slate-500 text-[10px]">Subdomain Count</span>
-                    <p className="text-slate-200 font-bold">{result.mlResult.features.noOfSubdomains}</p>
+                    <span className="text-slate-500 text-[10px]">Subdomain depth</span>
+                    <p className="text-slate-200 font-bold">{result.heuristics.features.subdomainDepth}</p>
                   </div>
                   <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-0.5">
-                    <span className="text-slate-500 text-[10px]">Special Char Ratio</span>
-                    <p className="text-slate-200 font-bold">{(result.mlResult.features.spcharRatio * 100).toFixed(1)}%</p>
+                    <span className="text-slate-500 text-[10px]">Public suffix</span>
+                    <p className="text-slate-200 font-bold">.{result.heuristics.features.publicSuffix || '—'}</p>
                   </div>
                 </div>
               </div>
@@ -207,13 +238,13 @@ export function UrlScanner({ onInspectCase }) {
             {/* Risk Breakdown Reasons */}
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider font-mono">
-                Threat Breakdown & Heuristic Indicators
+                What was found
               </h3>
-              
+
               {result.reasons.length === 0 ? (
                 <div className="p-4 rounded-xl bg-emerald-950/30 border border-emerald-500/30 flex items-center space-x-3 text-emerald-300 text-sm">
                   <ShieldCheck className="w-5 h-5 text-emerald-400" />
-                  <span>No malicious signatures found. Domain structure complies with security standards.</span>
+                  <span>Nothing flagged: the domain is not a lookalike of any brand on the list and its structure is unremarkable.</span>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -221,9 +252,7 @@ export function UrlScanner({ onInspectCase }) {
                     <div key={i} className="p-3.5 rounded-xl bg-[#0a0d14] border border-slate-800 space-y-1">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-mono text-sky-400 font-medium">{reason.category}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono uppercase ${
-                          reason.severity === 'critical' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'
-                        }`}>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono uppercase ${severityStyle(reason.severity)}`}>
                           {reason.severity}
                         </span>
                       </div>
@@ -248,10 +277,14 @@ export function UrlScanner({ onInspectCase }) {
 
             {/* Action Bar */}
             <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
-              <div className="flex items-center space-x-1.5 text-emerald-400">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Scan logged to threat database</span>
-              </div>
+              {savedSuccess ? (
+                <div className="flex items-center space-x-1.5 text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Scan logged to threat database</span>
+                </div>
+              ) : (
+                <span className="text-slate-500">Scan not logged</span>
+              )}
               <button
                 onClick={() => onInspectCase && onInspectCase()}
                 className="flex items-center space-x-1.5 text-sky-400 hover:text-sky-300 font-semibold transition"

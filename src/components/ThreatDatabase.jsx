@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Database, ShieldAlert, Globe, ExternalLink, RefreshCw, Search, Plus, Trash2, ArrowRight } from 'lucide-react';
+import { RefreshCw, Search, Plus, ArrowRight, BadgeCheck, HelpCircle } from 'lucide-react';
 import { dbService } from '../lib/supabase';
 
 export function ThreatDatabase({ onOpenFlagModal, onScanAddress }) {
@@ -11,11 +11,14 @@ export function ThreatDatabase({ onOpenFlagModal, onScanAddress }) {
 
   const loadData = async () => {
     setIsLoading(true);
-    const w = await dbService.getScamWallets();
-    const s = await dbService.getScans();
-    setWallets(w);
-    setScans(s);
-    setIsLoading(false);
+    try {
+      const [w, s] = await Promise.all([dbService.getScamWallets(), dbService.getScans()]);
+      setWallets(w);
+      setScans(s);
+    } finally {
+      // Without the finally, a throw left the refresh icon spinning forever.
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -49,7 +52,8 @@ export function ThreatDatabase({ onOpenFlagModal, onScanAddress }) {
         <div>
           <h1 className="text-3xl font-extrabold text-white">Threat Intelligence Database</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Community and verified database of flagged scammer wallets, rogue domains, and phishing indicators.
+            Flagged scammer wallets, rogue domains and phishing indicators. Rows are marked
+            verified or unverified — an unverified row is one person's report, not a finding.
           </p>
         </div>
 
@@ -114,6 +118,7 @@ export function ThreatDatabase({ onOpenFlagModal, onScanAddress }) {
               <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
                 <tr>
                   <th className="p-4">Flagged Address</th>
+                  <th className="p-4">Status</th>
                   <th className="p-4">Network</th>
                   <th className="p-4">Impersonated Platform</th>
                   <th className="p-4">Stolen (USD)</th>
@@ -124,7 +129,7 @@ export function ThreatDatabase({ onOpenFlagModal, onScanAddress }) {
               <tbody className="divide-y divide-slate-800/60 text-slate-300">
                 {filteredWallets.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-slate-500">
+                    <td colSpan={7} className="p-8 text-center text-slate-500">
                       No matching scammer wallets found.
                     </td>
                   </tr>
@@ -143,6 +148,20 @@ export function ThreatDatabase({ onOpenFlagModal, onScanAddress }) {
                           </p>
                         )}
                       </td>
+                      <td className="p-4">
+                        {w.verified !== false ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-500/15 text-red-300 border border-red-500/30">
+                            <BadgeCheck className="w-3 h-3" /> verified
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30"
+                            title="Submitted by a user and not yet reviewed. Treat as a lead, not a finding."
+                          >
+                            <HelpCircle className="w-3 h-3" /> unverified
+                          </span>
+                        )}
+                      </td>
                       <td className="p-4 text-slate-400">{w.network}</td>
                       <td className="p-4">
                         <span className="px-2.5 py-0.5 rounded bg-red-950/50 text-red-300 border border-red-900/40 font-bold">
@@ -150,7 +169,11 @@ export function ThreatDatabase({ onOpenFlagModal, onScanAddress }) {
                         </span>
                       </td>
                       <td className="p-4 font-bold text-slate-200">
-                        ${Number(w.total_stolen_usd || 0).toFixed(2)}
+                        {/* A missing amount used to render as "$0.00", which reads as a
+                            measured loss of nothing rather than an unrecorded one. */}
+                        {Number.isFinite(Number(w.total_stolen_usd)) && w.total_stolen_usd !== null
+                          ? `$${Number(w.total_stolen_usd).toFixed(2)}`
+                          : <span className="text-slate-500 font-normal">not recorded</span>}
                       </td>
                       <td className="p-4 text-amber-400 font-semibold">{w.destination_entity || 'Unknown'}</td>
                       <td className="p-4 text-right">
@@ -195,11 +218,16 @@ export function ThreatDatabase({ onOpenFlagModal, onScanAddress }) {
                       <td className="p-4 uppercase text-slate-400">{s.scan_type}</td>
                       <td className="p-4">
                         <span className={`px-2 py-0.5 rounded font-bold ${
-                          s.risk_level === 'MALICIOUS' ? 'bg-red-500/20 text-red-400' :
-                          s.risk_level === 'SUSPICIOUS' ? 'bg-amber-500/20 text-amber-400' :
-                          'bg-emerald-500/20 text-emerald-400'
+                          ['MALICIOUS', 'CRITICAL', 'CRITICAL MALICIOUS'].includes(s.risk_level) ? 'bg-red-500/20 text-red-400' :
+                          ['HIGH RISK', 'SUSPICIOUS'].includes(s.risk_level) ? 'bg-amber-500/20 text-amber-400' :
+                          ['LOW RISK'].includes(s.risk_level) ? 'bg-sky-500/20 text-sky-400' :
+                          ['SAFE', 'CLEAN', 'NO THREATS FOUND'].includes(s.risk_level) ? 'bg-emerald-500/20 text-emerald-400' :
+                          // Anything unrecognised, including UNKNOWN, is grey. It used to
+                          // land in the green branch by default.
+                          'bg-slate-700/40 text-slate-300'
                         }`}>
-                          {s.risk_level} ({s.risk_score}%)
+                          {s.risk_level || 'UNKNOWN'}
+                          {Number.isFinite(Number(s.risk_score)) ? ` (${s.risk_score}%)` : ''}
                         </span>
                       </td>
                       <td className="p-4 text-slate-500">{new Date(s.created_at).toLocaleString()}</td>

@@ -1,46 +1,107 @@
-import React, { useState } from 'react';
-import { X, ShieldAlert, CheckCircle2, AlertTriangle, Database } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, ShieldAlert, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { dbService } from '../lib/supabase';
+import { validateAddress } from '../lib/evm';
+
+/** Tron addresses are base58, not hex, so the EIP-55 check does not apply. */
+function checkTronAddress(value) {
+  if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value)) {
+    return { ok: false, reason: 'A Tron address is 34 characters starting with T.' };
+  }
+  return { ok: true, address: value };
+}
 
 export function FlagScammerModal({ isOpen, onClose, initialAddress = '', onFlaggedSuccess }) {
-  if (!isOpen) return null;
-
+  // Hooks run before the isOpen guard. This modal is mounted for the life of the
+  // app and toggled by prop, so an early return changed the hook count from 0 to
+  // 10 the moment it opened -- React aborts on that.
   const [address, setAddress] = useState(initialAddress);
   const [network, setNetwork] = useState('Ethereum (ERC-20)');
   const [category, setCategory] = useState('Phishing / Account Takeover');
-  const [impersonatedBrand, setImpersonatedBrand] = useState('Atlas Capture');
-  const [stolenAmount, setStolenAmount] = useState('146.07');
-  const [destinationEntity, setDestinationEntity] = useState('Binance');
+  // These used to default to this repo's own case -- 'Atlas Capture', '146.07',
+  // 'Binance' -- so anyone flagging an unrelated address submitted that incident's
+  // details with it unless they noticed. They are placeholders now, not values.
+  const [impersonatedBrand, setImpersonatedBrand] = useState('');
+  const [stolenAmount, setStolenAmount] = useState('');
+  const [destinationEntity, setDestinationEntity] = useState('');
   const [destinationAddress, setDestinationAddress] = useState('');
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState(null);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // A useState initialiser runs once for the component's whole life, so opening
+  // the modal a second time from a different row kept showing the first address.
+  useEffect(() => {
+    if (isOpen) {
+      setAddress(initialAddress || '');
+      setErrorMsg('');
+      setSuccess(null);
+    }
+  }, [isOpen, initialAddress]);
+
+  if (!isOpen) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!address.trim()) return;
+    const raw = address.trim();
+    if (!raw) return;
+    setErrorMsg('');
+
+    // Validate before writing. An unchecked address goes into the blocklist as
+    // typed: a malformed one can never match a real lookup, and a valid typo
+    // blocks a wallet belonging to someone uninvolved.
+    const parsed = network.startsWith('Tron') ? checkTronAddress(raw) : validateAddress(raw);
+    if (!parsed.ok) {
+      setErrorMsg(
+        parsed.checksum
+          ? `${parsed.reason} Nearest valid checksum: ${parsed.checksum}`
+          : parsed.reason
+      );
+      return;
+    }
+
+    const destination = destinationAddress.trim();
+    if (destination && !network.startsWith('Tron')) {
+      const parsedDest = validateAddress(destination);
+      if (!parsedDest.ok) {
+        setErrorMsg(`Destination address: ${parsedDest.reason}`);
+        return;
+      }
+    }
+
+    const amount = stolenAmount.trim();
+    const parsedAmount = amount === '' ? null : Number(amount);
+    if (parsedAmount !== null && !Number.isFinite(parsedAmount)) {
+      setErrorMsg('Amount stolen must be a number, or left blank if unknown.');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
-      await dbService.addScamWallet({
-        wallet_address: address.trim(),
+      const record = await dbService.addScamWallet({
+        wallet_address: parsed.address,
         network,
         scam_category: category,
-        impersonated_brand: impersonatedBrand.trim() || 'Generic Scam',
-        total_stolen_usd: parseFloat(stolenAmount) || 0.00,
-        destination_entity: destinationEntity.trim() || 'Unknown',
-        destination_address: destinationAddress.trim() || null,
-        notes: notes.trim() || 'Reported via ChainShield Threat Portal'
+        // Blank fields are stored as null rather than invented. 'Generic Scam',
+        // 'Unknown' and 0.00 all read as recorded findings downstream -- the
+        // threat table rendered a missing amount as "$0.00".
+        impersonated_brand: impersonatedBrand.trim() || null,
+        total_stolen_usd: parsedAmount,
+        destination_entity: destinationEntity.trim() || null,
+        destination_address: destination || null,
+        notes: notes.trim() || null,
       });
 
-      setSuccess(true);
+      setSuccess(record?.storage === 'cloud' ? 'cloud' : 'local');
       if (onFlaggedSuccess) onFlaggedSuccess();
       setTimeout(() => {
-        setSuccess(false);
+        setSuccess(null);
         onClose();
-      }, 1200);
+      }, 2200);
     } catch (err) {
       console.error('Failed to flag scammer:', err);
+      setErrorMsg(`The report could not be saved: ${err.message}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -58,7 +119,9 @@ export function FlagScammerModal({ isOpen, onClose, initialAddress = '', onFlagg
             </div>
             <div>
               <h3 className="text-base font-bold text-white">Flag Malicious Scammer Address</h3>
-              <p className="text-xs text-slate-400">Add address to global threat intelligence database</p>
+              <p className="text-xs text-slate-400">
+                Submitted as an <b>unverified</b> report until a reviewer confirms it
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white p-1 rounded-lg">
@@ -125,7 +188,7 @@ export function FlagScammerModal({ isOpen, onClose, initialAddress = '', onFlagg
               <label className="text-slate-400">IMPERSONATED BRAND / PLATFORM:</label>
               <input
                 type="text"
-                placeholder="e.g. Atlas Capture, Binance"
+                placeholder="e.g. Atlas Capture, Binance (leave blank if unknown)"
                 value={impersonatedBrand}
                 onChange={(e) => setImpersonatedBrand(e.target.value)}
                 className="w-full p-2.5 bg-[#0a0d14] border border-slate-700 rounded-xl text-white focus:outline-none focus:border-red-500 text-xs"
@@ -152,7 +215,7 @@ export function FlagScammerModal({ isOpen, onClose, initialAddress = '', onFlagg
               <label className="text-slate-400">DESTINATION EXCHANGE (CEX):</label>
               <input
                 type="text"
-                placeholder="e.g. Binance Deposit Cluster, OKX"
+                placeholder="e.g. Binance Deposit Cluster, OKX (blank if unknown)"
                 value={destinationEntity}
                 onChange={(e) => setDestinationEntity(e.target.value)}
                 className="w-full p-2.5 bg-[#0a0d14] border border-slate-700 rounded-xl text-amber-300 focus:outline-none focus:border-red-500 text-xs"
@@ -183,10 +246,31 @@ export function FlagScammerModal({ isOpen, onClose, initialAddress = '', onFlagg
             />
           </div>
 
-          {success && (
-            <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 flex items-center space-x-2">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Address flagged and saved to Supabase Scam Database!</span>
+          {/* The old message claimed a Supabase save unconditionally, but
+              addScamWallet falls back to this browser's storage whenever the
+              cloud write is unavailable. */}
+          {success === 'cloud' && (
+            <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 flex items-start space-x-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                Saved to the shared blocklist as an unverified report. It will screen
+                payouts immediately and stays unverified until a reviewer confirms it.
+              </span>
+            </div>
+          )}
+          {success === 'local' && (
+            <div className="p-3 rounded-xl bg-amber-950/50 border border-amber-500/40 text-amber-200 flex items-start space-x-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                Saved <b>in this browser only</b> — the shared database was not reachable,
+                so no one else can see this report. Configure Supabase to publish it.
+              </span>
+            </div>
+          )}
+          {errorMsg && (
+            <div className="p-3 rounded-xl bg-red-950/50 border border-red-500/40 text-red-200 flex items-start space-x-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span className="break-all font-sans">{errorMsg}</span>
             </div>
           )}
 

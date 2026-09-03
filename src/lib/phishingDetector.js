@@ -1,223 +1,217 @@
-import { classifyUrlML } from './mlPhishingClassifier';
+/**
+ * URL and message phishing analysis.
+ *
+ * Order of reasoning matters here. The brand relationship is resolved first,
+ * against the registrable domain: a host the brand actually owns cannot be a
+ * brand-impersonation attack however its structure scores, and a host that
+ * places a brand name where the brand has no control is malicious however tidy
+ * its structure looks. Structural heuristics only decide the cases in between.
+ */
+import { parseTarget, levenshtein } from './domainUtils.js';
+import {
+  detectBrandAbuse, KNOWN_TRUSTED_BRANDS, HIGH_RISK_SUFFIXES,
+} from './brands.js';
+import { scoreHeuristics, PHISHING_KEYWORDS } from './urlHeuristics.js';
 
-export const KNOWN_TRUSTED_BRANDS = [
-  { name: 'Atlas Capture', domains: ['atlascapture.com', 'atlascapture.io', 'app.atlascapture.com'] },
-  { name: 'Binance', domains: ['binance.com', 'binance.us'] },
-  { name: 'MetaMask', domains: ['metamask.io', 'metamask.app'] },
-  { name: 'Coinbase', domains: ['coinbase.com'] },
-  { name: 'Tether / USDT', domains: ['tether.to'] },
-  { name: 'Google', domains: ['google.com', 'accounts.google.com'] },
-  { name: 'Microsoft', domains: ['microsoft.com', 'login.microsoftonline.com'] },
-  { name: 'PayPal', domains: ['paypal.com'] }
-];
+export { KNOWN_TRUSTED_BRANDS, PHISHING_KEYWORDS };
 
-export const SUSPICIOUS_TLDS = [
-  '.top', '.xyz', '.icu', '.cam', '.cfd', '.sbs', '.buzz', '.monster', '.rest', '.tk', '.ml', '.ga', '.cf', '.gq', '.work', '.click'
-];
+/** Legacy dotted form kept for callers that expect ".xyz" rather than "xyz". */
+export const SUSPICIOUS_TLDS = HIGH_RISK_SUFFIXES.map((s) => `.${s}`);
+export const levenshteinDistance = levenshtein;
 
-export const PHISHING_KEYWORDS = [
-  'verify', 'urgent', 'update-wallet', 'payout-verify', 'suspended', 
-  'claim', 'kyc-update', 'login-security', 'authenticate', 'bonus-claim',
-  'wallet-connect', 'action-required', 'account-blocked', 'billing-confirm'
-];
+const MALICIOUS_AT = 60;
+const SUSPICIOUS_AT = 30;
 
-export function levenshteinDistance(s1, s2) {
-  if (s1.length < s2.length) return levenshteinDistance(s2, s1);
-  if (s2.length === 0) return s1.length;
-  
-  let previousRow = Array.from({ length: s2.length + 1 }, (_, i) => i);
-  for (let i = 0; i < s1.length; i++) {
-    const currentRow = [i + 1];
-    for (let j = 0; j < s2.length; j++) {
-      const insertions = previousRow[j + 1] + 1;
-      const deletions = currentRow[j] + 1;
-      const substitutions = previousRow[j] + (s1[i] !== s2[j] ? 1 : 0);
-      currentRow.push(Math.min(insertions, deletions, substitutions));
-    }
-    previousRow = currentRow;
-  }
-  return previousRow[previousRow.length - 1];
+/** A domain on the verified list cannot be talked above this by structure alone. */
+const VERIFIED_CEILING = 8;
+
+export function riskLevelFor(score) {
+  if (score >= MALICIOUS_AT) return 'MALICIOUS';
+  if (score >= SUSPICIOUS_AT) return 'SUSPICIOUS';
+  return 'SAFE';
 }
 
-export function analyzeUrl(rawUrl) {
-  let formattedUrl = rawUrl.trim();
-  if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
-    formattedUrl = 'https://' + formattedUrl;
+function recommendationsFor(riskLevel, brand) {
+  if (riskLevel === 'MALICIOUS') {
+    return [
+      'Do not enter credentials, seed phrases or wallet approvals on this page.',
+      brand
+        ? `Reach ${brand} by typing its address yourself, not through this link.`
+        : 'Navigate to the service by typing its address yourself.',
+      'If you already signed in, change that password now and revoke active sessions.',
+      'If you approved a wallet transaction, revoke the token allowance before anything else.',
+    ];
   }
+  if (riskLevel === 'SUSPICIOUS') {
+    return [
+      'Confirm the domain with the service through a channel you already trust.',
+      'Do not connect a wallet or approve signature requests from this page.',
+    ];
+  }
+  return ['No brand-impersonation or structural phishing signals were found in this URL.'];
+}
 
-  let parsed;
-  try {
-    parsed = new URL(formattedUrl);
-  } catch {
+/** Score floors by brand-abuse class. A floor is a claim about the domain, not a tally. */
+const BRAND_VERDICTS = {
+  impersonation: { floor: 85, category: 'Brand Impersonation', flag: 'BRAND_IMPERSONATION' },
+  confusable: { floor: 85, category: 'Homoglyph Lookalike', flag: 'HOMOGLYPH_SQUAT' },
+  typo: { floor: 75, category: 'Typosquat', flag: 'TYPOSQUAT' },
+};
+
+export function analyzeUrl(rawUrl) {
+  const target = parseTarget(rawUrl);
+
+  if (!target.ok) {
     return {
       isValid: false,
-      riskScore: 100,
-      riskLevel: 'MALICIOUS',
-      reasons: [{ category: 'Structure', severity: 'critical', text: 'Malformed URL structure' }],
-      recommendations: ['Do NOT navigate to this address.']
+      url: target.input,
+      hostname: '',
+      riskScore: 0,
+      riskLevel: 'UNKNOWN',
+      impersonatedBrand: null,
+      reasons: [{
+        category: 'Input',
+        severity: 'medium',
+        text: 'This is not a parseable web address, so there is nothing to check. '
+          + 'Paste the full link, including the part before the first slash.',
+      }],
+      flags: ['UNPARSEABLE'],
+      recommendations: ['Check the link for missing or extra characters and paste it again.'],
+      heuristics: null,
+      timestamp: new Date().toISOString(),
     };
   }
 
-  const hostname = parsed.hostname.toLowerCase();
-  const fullUrl = parsed.toString().toLowerCase();
+  const heuristics = scoreHeuristics(target);
+  const abuse = detectBrandAbuse(target);
 
-  // 1. Run PhiUSIIL ML Ensemble Classifier
-  const mlResult = classifyUrlML(formattedUrl);
-
-  let riskScore = mlResult.mlRiskScore;
   const reasons = [];
   const flags = [];
+  let riskScore = heuristics.score;
   let impersonatedBrand = null;
 
-  // Add ML Key Drivers
-  mlResult.keyDrivers.forEach(driver => {
+  if (abuse.status === 'official') {
+    riskScore = Math.min(riskScore, VERIFIED_CEILING);
     reasons.push({
-      category: 'PhiUSIIL ML Feature',
-      severity: 'medium',
-      text: driver
+      category: 'Domain Ownership',
+      severity: 'low',
+      text: `${target.hostname} sits on ${abuse.brand}'s verified domain list, so no `
+        + 'amount of odd-looking structure makes it an impersonation of itself.',
     });
-  });
-
-  // 2. High-Precision Brand Impersonation & Typosquatting Check
-  const cleanHost = hostname.replace(/[-_.]/g, '');
-  for (const brand of KNOWN_TRUSTED_BRANDS) {
-    const isOfficial = brand.domains.some(d => hostname === d || hostname.endsWith('.' + d));
-    const brandSlug = brand.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-    if (!isOfficial) {
-      if (hostname.includes(brandSlug) || cleanHost.includes(brandSlug)) {
-        riskScore = Math.max(riskScore, 95);
-        impersonatedBrand = brand.name;
-        reasons.unshift({
-          category: 'Brand Impersonation',
-          severity: 'critical',
-          text: `Critical: URL claims to be '${brand.name}' but is hosted on an unofficial rogue domain (${hostname})!`
-        });
-        flags.push('BRAND_IMPERSONATION');
-      } else {
-        const dist = levenshteinDistance(brandSlug, cleanHost.slice(0, brandSlug.length + 3));
-        if (dist > 0 && dist <= 2) {
-          riskScore = Math.max(riskScore, 85);
-          impersonatedBrand = brand.name;
-          reasons.unshift({
-            category: 'Typosquatting',
-            severity: 'critical',
-            text: `Typosquatting detected: '${hostname}' visually mimics '${brand.name}' with slight character mutations.`
-          });
-          flags.push('TYPOSQUATTING');
-        }
-      }
-    }
+    flags.push('VERIFIED_DOMAIN');
+  } else if (abuse.status === 'brand-elsewhere') {
+    reasons.push({ category: 'Domain Ownership', severity: 'low', text: `${abuse.evidence}.` });
+    flags.push('BRAND_ON_OTHER_SUFFIX');
+  } else if (abuse.status === 'impersonation' || abuse.status === 'squat') {
+    const verdict = BRAND_VERDICTS[abuse.status === 'squat' ? abuse.kind : 'impersonation'];
+    riskScore = Math.max(riskScore, verdict.floor);
+    impersonatedBrand = abuse.brand;
+    reasons.unshift({
+      category: verdict.category,
+      severity: 'critical',
+      text: `Presents itself as ${abuse.brand} without being ${abuse.brand}: ${abuse.evidence}.`,
+    });
+    flags.push(verdict.flag);
+  } else if (abuse.status === 'path-mention') {
+    riskScore += 20;
+    impersonatedBrand = abuse.brand;
+    reasons.unshift({
+      category: 'Unsupported Brand Claim',
+      severity: 'high',
+      text: `Invokes ${abuse.brand} from a host that has no connection to it — ${abuse.evidence}.`,
+    });
+    flags.push('BRAND_IN_PATH');
   }
 
-  // 3. TLD Verification
-  const matchedTld = SUSPICIOUS_TLDS.find(tld => hostname.endsWith(tld));
-  if (matchedTld) {
-    riskScore = Math.min(100, riskScore + 15);
+  for (const signal of heuristics.signals) {
     reasons.push({
-      category: 'Domain Registry',
-      severity: 'medium',
-      text: `High-risk throwaway TLD (${matchedTld}) associated with disposable phishing campaigns.`
+      category: 'URL Structure',
+      severity: signal.severity,
+      text: signal.text,
+      id: signal.id,
+      weight: signal.weight,
     });
-    flags.push('SUSPICIOUS_TLD');
+    flags.push(signal.id);
   }
 
-  // 4. Keyword Triggers
-  const foundKeywords = PHISHING_KEYWORDS.filter(kw => fullUrl.includes(kw));
-  if (foundKeywords.length > 0) {
-    riskScore = Math.min(100, riskScore + 15);
-    reasons.push({
-      category: 'Deceptive Path',
-      severity: 'medium',
-      text: `Deceptive call-to-action keywords detected: [${foundKeywords.join(', ')}]`
-    });
-    flags.push('DECEPTIVE_KEYWORDS');
-  }
-
-  riskScore = Math.min(100, Math.max(0, riskScore));
-
-  let riskLevel = 'SAFE';
-  if (riskScore >= 60) riskLevel = 'MALICIOUS';
-  else if (riskScore >= 25) riskLevel = 'SUSPICIOUS';
-
-  const recommendations = [];
-  if (riskLevel === 'MALICIOUS') {
-    recommendations.push('🚨 DO NOT click or enter credentials/passwords on this link.');
-    recommendations.push('🔒 If you already entered login details, immediately reset your password on the legitimate platform.');
-    recommendations.push('🛡️ Inspect and remove any unauthorized wallet address modifications on your profile.');
-  } else if (riskLevel === 'SUSPICIOUS') {
-    recommendations.push('⚠️ Verify the sender domain with official support before proceeding.');
-    recommendations.push('🔎 Avoid connecting Web3 wallets or approving signature requests.');
-  } else {
-    recommendations.push('✅ No obvious automated phishing heuristics or ML risk signatures triggered.');
-  }
+  riskScore = Math.min(100, Math.max(0, Math.round(riskScore)));
+  const riskLevel = riskLevelFor(riskScore);
 
   return {
     isValid: true,
-    url: formattedUrl,
-    hostname,
-    protocol: parsed.protocol,
+    url: target.href,
+    hostname: target.hostname,
+    displayHost: target.unicodeHost,
+    registrableDomain: target.registrableDomain,
+    protocol: `${target.scheme}:`,
     riskScore,
     riskLevel,
     impersonatedBrand,
+    brandStatus: abuse.status,
     reasons,
     flags,
-    recommendations,
-    mlResult,
-    timestamp: new Date().toISOString()
+    recommendations: recommendationsFor(riskLevel, impersonatedBrand),
+    heuristics,
+    timestamp: new Date().toISOString(),
   };
 }
+
+const URGENCY_TRIGGERS = [
+  'immediate action', 'suspended within 24 hours', 'within 12 hours', 'urgent update',
+  'account termination', 'verify immediately', 'funds frozen', 'failure to respond',
+  'final warning', 'act now', 'within the next hour', 'permanently closed',
+];
+
+const WALLET_TRIGGERS = [
+  'update payout address', 'change wallet', 'usdt address', 'erc-20', 'erc20',
+  'connect metamask', 're-link wallet', 'pending withdrawal', 'payment hold',
+  'seed phrase', 'recovery phrase', 'private key', 'validate your wallet',
+];
 
 export function analyzeMessage(text) {
   if (!text || text.trim().length === 0) return null;
 
-  let riskScore = 0;
+  const lowerText = text.toLowerCase();
   const reasons = [];
   const flags = [];
-  const lowerText = text.toLowerCase();
+  let riskScore = 0;
 
-  const urgencyTriggers = [
-    'immediate action', 'suspended within 24 hours', 'within 12 hours', 'urgent update', 
-    'account termination', 'verify immediately', 'funds frozen', 'failure to respond'
-  ];
-  const matchedUrgency = urgencyTriggers.filter(t => lowerText.includes(t));
+  const matchedUrgency = URGENCY_TRIGGERS.filter((t) => lowerText.includes(t));
   if (matchedUrgency.length > 0) {
     riskScore += 35;
     reasons.push({
       category: 'Urgency Manipulation',
       severity: 'high',
-      text: `High-pressure psychological urgency detected: "${matchedUrgency[0]}"`
+      text: `Manufactured time pressure: "${matchedUrgency[0]}". A deadline is what stops `
+        + 'someone checking the domain.',
     });
     flags.push('URGENCY_MANIPULATION');
   }
 
-  const walletTriggers = [
-    'update payout address', 'change wallet', 'usdt address', 'erc-20', 'erc20', 
-    'connect metamask', 're-link wallet', 'pending withdrawal', 'payment hold'
-  ];
-  const matchedWallet = walletTriggers.filter(t => lowerText.includes(t));
+  const matchedWallet = WALLET_TRIGGERS.filter((t) => lowerText.includes(t));
   if (matchedWallet.length > 0) {
-    riskScore += 35;
+    riskScore += 40;
     reasons.push({
       category: 'Payment Redirection Attempt',
       severity: 'critical',
-      text: `Attempts to solicit or alter payout / cryptocurrency wallet credentials: [${matchedWallet.join(', ')}]`
+      text: `Solicits or rewrites payout credentials: [${matchedWallet.join(', ')}]. No `
+        + 'legitimate platform asks for a seed phrase, and none needs you to change a '
+        + 'payout address from a message.',
     });
     flags.push('PAYOUT_MANIPULATION');
   }
 
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const extractedUrls = text.match(urlRegex) || [];
-  let urlScans = [];
-  if (extractedUrls.length > 0) {
-    urlScans = extractedUrls.map(u => analyzeUrl(u));
-    const highestUrlScore = Math.max(...urlScans.map(s => s.riskScore));
-    riskScore += Math.floor(highestUrlScore * 0.5);
-    if (highestUrlScore >= 60) {
+  const extractedUrls = text.match(/(https?:\/\/[^\s<>"')]+)/gi) || [];
+  const urlScans = extractedUrls.map((u) => analyzeUrl(u));
+  if (urlScans.length > 0) {
+    const worst = urlScans.reduce((a, b) => (b.riskScore > a.riskScore ? b : a));
+    riskScore += Math.floor(worst.riskScore * 0.6);
+    if (worst.riskScore >= MALICIOUS_AT) {
       reasons.push({
-        category: 'Malicious Embedded Links',
+        category: 'Malicious Embedded Link',
         severity: 'critical',
-        text: `Message contains ${extractedUrls.length} link(s) with high phishing probability.`
+        text: `${worst.hostname} scores ${worst.riskScore}/100 on its own`
+          + `${worst.impersonatedBrand ? ` and impersonates ${worst.impersonatedBrand}` : ''}.`,
       });
       flags.push('MALICIOUS_EMBEDDED_LINK');
     }
@@ -229,16 +223,15 @@ export function analyzeMessage(text) {
       reasons.push({
         category: 'Platform Impersonation',
         severity: 'high',
-        text: 'Explicitly targets Atlas Capture contractors/users with credential/payout modification prompts.'
+        text: 'Targets Atlas Capture contractors specifically, combined with a credential '
+          + 'or payout prompt — the pattern behind the case already on file here.',
       });
       flags.push('ATLAS_CAPTURE_TARGETED');
     }
   }
 
   riskScore = Math.min(100, riskScore);
-  let riskLevel = 'SAFE';
-  if (riskScore >= 60) riskLevel = 'MALICIOUS';
-  else if (riskScore >= 25) riskLevel = 'SUSPICIOUS';
+  const riskLevel = riskLevelFor(riskScore);
 
   return {
     rawLength: text.length,
@@ -247,6 +240,7 @@ export function analyzeMessage(text) {
     reasons,
     flags,
     extractedUrls: urlScans,
-    timestamp: new Date().toISOString()
+    recommendations: recommendationsFor(riskLevel, null),
+    timestamp: new Date().toISOString(),
   };
 }

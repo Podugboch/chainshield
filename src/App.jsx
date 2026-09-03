@@ -3,6 +3,9 @@ import { Navbar } from './components/Navbar';
 import { UrlScanner } from './components/UrlScanner';
 import { MessageScanner } from './components/MessageScanner';
 import { CryptoForensics } from './components/CryptoForensics';
+// PayoutGuard existed as a 274-line component that nothing imported, so the
+// pre-payout screen it implements was unreachable. It has its own tab now.
+import { PayoutGuard } from './components/PayoutGuard';
 import { EnforcementHub } from './components/EnforcementHub';
 import { CaseManager } from './components/CaseManager';
 import { ThreatDatabase } from './components/ThreatDatabase';
@@ -16,6 +19,10 @@ export default function App() {
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [isFlagModalOpen, setIsFlagModalOpen] = useState(false);
   const [selectedWalletForScan, setSelectedWalletForScan] = useState('');
+  // Bumped after a successful flag so the threat table remounts and reloads.
+  // Nothing refreshed it before, so a newly reported address stayed invisible
+  // until the user pressed refresh themselves.
+  const [dbRefreshKey, setDbRefreshKey] = useState(0);
 
   const handleScanFromDb = (address) => {
     setSelectedWalletForScan(address);
@@ -53,6 +60,10 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'payout-guard' && (
+          <PayoutGuard />
+        )}
+
         {activeTab === 'enforcement' && (
           <EnforcementHub onOpenDossier={() => setIsReportModalOpen(true)} />
         )}
@@ -62,7 +73,8 @@ export default function App() {
         )}
 
         {activeTab === 'threat-db' && (
-          <ThreatDatabase 
+          <ThreatDatabase
+            key={dbRefreshKey}
             onOpenFlagModal={() => setIsFlagModalOpen(true)}
             onScanAddress={handleScanFromDb}
           />
@@ -84,12 +96,13 @@ export default function App() {
         isOpen={isFlagModalOpen}
         initialAddress={selectedWalletForScan}
         onClose={() => setIsFlagModalOpen(false)}
+        onFlaggedSuccess={() => setDbRefreshKey((k) => k + 1)}
       />
 
       {/* Footer */}
       <footer className="border-t border-slate-800/80 bg-slate-950/60 py-6 text-center text-xs text-slate-500 font-mono">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>ChainShield &copy; 2026 | AI Anti-Phishing & Blockchain Forensics</span>
+          <span>ChainShield &copy; 2026 | URL, Message &amp; Blockchain Forensics</span>
           <span>Designed for incident remediation & law enforcement reporting</span>
         </div>
       </footer>

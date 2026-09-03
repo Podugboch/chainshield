@@ -156,9 +156,11 @@ export function MessageScanner() {
                 <div key={i} className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs">
                   <span className="font-mono text-sky-300 truncate max-w-md">{u.url}</span>
                   <span className={`px-2 py-0.5 rounded font-mono font-bold ${
-                    u.riskLevel === 'MALICIOUS' ? 'text-red-400 bg-red-500/20' : 'text-emerald-400 bg-emerald-500/20'
+                    u.riskLevel === 'MALICIOUS' ? 'text-red-400 bg-red-500/20'
+                      : u.riskLevel === 'SUSPICIOUS' ? 'text-amber-400 bg-amber-500/20'
+                        : 'text-emerald-400 bg-emerald-500/20'
                   }`}>
-                    {u.riskLevel} ({u.riskScore}%)
+                    {u.riskLevel} ({u.riskScore}/100)
                   </span>
                 </div>
               ))}

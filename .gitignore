@@ -27,3 +27,9 @@ dist-ssr
 .env
 .env.local
 .env.production
+
+# Python (api/)
+__pycache__/
+*.py[cod]
+.venv/
+venv/

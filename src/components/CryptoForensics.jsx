@@ -47,16 +47,31 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
     try {
       if (type === 'wallet') {
         const res = await scanWalletLive(rawTarget, net);
-        
-        const isFlagged = await dbService.isWalletFlagged(rawTarget);
+
+        // A malformed or mis-checksummed address never reached the network.
+        if (res.valid === false) {
+          setErrorMsg(
+            res.checksumSuggestion
+              ? `${res.message} Did you mean ${res.checksumSuggestion}?`
+              : res.message,
+          );
+          return;
+        }
+
+        const isFlagged = await dbService.isWalletFlagged(res.address);
         if (isFlagged) {
-          res.riskScore = 100;
-          res.riskLevel = 'CRITICAL';
+          // An unverified community report is a reason to look closer, not a
+          // verdict. Scoring both the same made every submission look proven.
+          const verified = isFlagged.verified !== false;
+          res.riskScore = Math.min(100, res.riskScore + (verified ? 100 : 40));
+          res.riskLevel = verified ? 'CRITICAL' : 'SUSPICIOUS';
           res.entity = {
-            name: `FLAGGED SCAMMER: ${isFlagged.impersonated_brand || isFlagged.scam_category}`,
+            name: verified
+              ? `FLAGGED SCAMMER: ${isFlagged.impersonated_brand || isFlagged.scam_category}`
+              : `UNVERIFIED REPORT: ${isFlagged.impersonated_brand || isFlagged.scam_category}`,
             type: 'FLAGGED_SCAMMER',
-            riskLevel: 'CRITICAL',
-            color: '#ef4444'
+            riskLevel: verified ? 'CRITICAL' : 'SUSPICIOUS',
+            color: verified ? '#ef4444' : '#f59e0b',
           };
           setFlagRecord(isFlagged);
         }
@@ -64,7 +79,7 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
         setWalletResult(res);
       } else {
         const res = await scanTransactionLive(rawTarget, net);
-        if (res.found === false) {
+        if (res.valid === false || res.found === false) {
           setErrorMsg(res.message);
         } else {
           setTxResult(res);
@@ -230,13 +245,21 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
                 <ShieldAlert className="w-8 h-8 text-red-400 shrink-0 mt-0.5 animate-pulse" />
                 <div>
                   <span className="px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-300 text-[10px] font-mono font-bold border border-red-500/40 uppercase">
-                    CONFIRMED MALICIOUS SCAMMER WALLET
+                    {flagRecord.verified !== false
+                      ? 'VERIFIED SCAMMER WALLET'
+                      : 'UNVERIFIED COMMUNITY REPORT'}
                   </span>
                   <h3 className="text-base font-extrabold text-white mt-1">
                     Indexed in Threat Database: {flagRecord.impersonated_brand || flagRecord.scam_category}
                   </h3>
                   <p className="text-xs text-red-200/90 mt-1">
-                    This wallet is actively flagged for <b>{flagRecord.scam_category}</b>. Total verified losses: <b>${Number(flagRecord.total_stolen_usd || 0).toFixed(2)} USD</b>.
+                    Flagged for <b>{flagRecord.scam_category}</b>
+                    {flagRecord.total_stolen_usd
+                      ? <> · reported loss <b>${Number(flagRecord.total_stolen_usd).toFixed(2)} USD</b></>
+                      : null}
+                    {flagRecord.verified === false
+                      ? ' · submitted by a user and not independently confirmed. Verify before acting on it.'
+                      : '.'}
                   </p>
                 </div>
               </div>
@@ -293,42 +316,69 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
                   walletResult.goplusAudit.riskLevel === 'CRITICAL MALICIOUS' ? 'bg-red-500/15 text-red-400 border-red-500/30' :
                   walletResult.goplusAudit.riskLevel === 'HIGH RISK' ? 'bg-orange-500/15 text-orange-400 border-orange-500/30' :
                   walletResult.goplusAudit.riskLevel === 'SUSPICIOUS' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' :
+                  walletResult.goplusAudit.riskLevel === 'LOW RISK' ? 'bg-sky-500/15 text-sky-400 border-sky-500/30' :
+                  walletResult.goplusAudit.degraded ? 'bg-slate-700/40 text-slate-300 border-slate-600' :
                   'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
                 }`}>
                   {walletResult.goplusAudit.riskLevel}
                 </span>
               </div>
 
-              {/* Metrics Grid */}
+              {/* Metrics Grid. Every tile distinguishes a passed check from an
+                  absent one -- a green tick used to appear for tests that never
+                  ran, because the metric defaults were all `false`. */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
                 <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
                   <span className="text-slate-500 text-[10px]">Honeypot Test</span>
-                  <p className={`font-bold ${walletResult.goplusAudit.metrics.isHoneypot ? 'text-red-400' : 'text-emerald-400'}`}>
-                    {walletResult.goplusAudit.metrics.isHoneypot ? '🚨 HONEYPOT DETECTED' : '✅ PASSED (CAN SELL)'}
+                  <p className={`font-bold ${
+                    !walletResult.goplusAudit.metrics.hasTokenData ? 'text-slate-500'
+                      : walletResult.goplusAudit.metrics.isHoneypot ? 'text-red-400' : 'text-emerald-400'
+                  }`}>
+                    {!walletResult.goplusAudit.metrics.hasTokenData ? 'not a token / not checked'
+                      : walletResult.goplusAudit.metrics.isHoneypot ? '🚨 HONEYPOT DETECTED' : '✅ PASSED (CAN SELL)'}
                   </p>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
                   <span className="text-slate-500 text-[10px]">Buy / Sell Tax</span>
                   <p className="text-slate-200 font-bold">
-                    Buy: {walletResult.goplusAudit.metrics.buyTax}% | Sell: {walletResult.goplusAudit.metrics.sellTax}%
+                    {walletResult.goplusAudit.metrics.hasTokenData
+                      ? `Buy: ${walletResult.goplusAudit.metrics.buyTaxPct.toFixed(1)}% | Sell: ${walletResult.goplusAudit.metrics.sellTaxPct.toFixed(1)}%`
+                      : <span className="text-slate-500">not checked</span>}
                   </p>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
                   <span className="text-slate-500 text-[10px]">Open Source Contract</span>
-                  <p className={`font-bold ${walletResult.goplusAudit.metrics.isOpenSource ? 'text-emerald-400' : 'text-amber-400'}`}>
-                    {walletResult.goplusAudit.metrics.isOpenSource ? '✅ VERIFIED' : '⚠️ UNVERIFIED'}
+                  <p className={`font-bold ${
+                    !walletResult.goplusAudit.metrics.hasTokenData ? 'text-slate-500'
+                      : walletResult.goplusAudit.metrics.isOpenSource ? 'text-emerald-400' : 'text-amber-400'
+                  }`}>
+                    {!walletResult.goplusAudit.metrics.hasTokenData ? 'not checked'
+                      : walletResult.goplusAudit.metrics.isOpenSource ? '✅ VERIFIED' : '⚠️ UNVERIFIED'}
                   </p>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
                   <span className="text-slate-500 text-[10px]">Phishing / Drainer Flags</span>
-                  <p className={`font-bold ${walletResult.goplusAudit.metrics.isPhishing || walletResult.goplusAudit.metrics.isStealingAttack ? 'text-red-400' : 'text-emerald-400'}`}>
-                    {walletResult.goplusAudit.metrics.isPhishing || walletResult.goplusAudit.metrics.isStealingAttack ? '🚨 FLAGGED' : '✅ CLEAN'}
+                  <p className={`font-bold ${
+                    !walletResult.goplusAudit.metrics.hasAddressData ? 'text-slate-500'
+                      : walletResult.goplusAudit.metrics.isPhishing || walletResult.goplusAudit.metrics.isStealingAttack
+                        ? 'text-red-400' : 'text-emerald-400'
+                  }`}>
+                    {!walletResult.goplusAudit.metrics.hasAddressData ? 'not checked'
+                      : walletResult.goplusAudit.metrics.isPhishing || walletResult.goplusAudit.metrics.isStealingAttack
+                        ? '🚨 FLAGGED' : '✅ NO REPORTS'}
                   </p>
                 </div>
               </div>
+
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                {walletResult.goplusAudit.caveat}
+              </p>
+              {walletResult.goplusAudit.dataGaps?.map((gap, i) => (
+                <p key={i} className="text-[11px] text-amber-300/90 font-mono">{gap}</p>
+              ))}
 
               {/* Risk Flags Rationale */}
               {walletResult.goplusAudit.flags.length > 0 && (
@@ -346,12 +396,28 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
             </div>
           )}
 
+          {/* What could not be read. A gap is not a zero, and the risk scoring
+              below skips any check whose inputs are missing. */}
+          {walletResult.dataGaps?.length > 0 && (
+            <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/30 space-y-1.5">
+              <span className="text-[10px] font-mono font-bold text-amber-400 uppercase">
+                Incomplete data - the following could not be read:
+              </span>
+              {walletResult.dataGaps.map((gap, i) => (
+                <p key={i} className="text-xs text-slate-300 flex items-start space-x-2">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                  <span>{gap}</span>
+                </p>
+              ))}
+            </div>
+          )}
+
           {/* On-Chain Metrics Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-4 rounded-xl bg-[#0a0d14] border border-slate-800 space-y-1">
               <span className="text-xs text-slate-500 font-mono">Native Balance:</span>
-              <p className="text-lg font-bold text-white font-mono">
-                {walletResult.nativeBalance.toFixed(4)} {walletResult.currency}
+              <p className="text-lg font-bold text-white font-mono" title={`${walletResult.nativeBalance} ${walletResult.currency}`}>
+                {walletResult.nativeBalanceDisplay ?? walletResult.nativeBalance} {walletResult.currency}
               </p>
             </div>
 
@@ -393,8 +459,15 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
               {walletResult.tokenBalances.map((tb, idx) => (
                 <div key={idx} className="p-3 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between text-xs font-mono">
                   <span className="text-slate-300 font-semibold">{tb.symbol}</span>
-                  <span className={tb.balance > 0 ? "text-emerald-400 font-bold" : "text-slate-500"}>
-                    {tb.balance.toFixed(2)}
+                  <span
+                    className={
+                      !tb.known ? 'text-amber-400 italic'
+                        : tb.rawBalance !== '0' ? 'text-emerald-400 font-bold'
+                        : 'text-slate-500'
+                    }
+                    title={tb.known ? `${tb.balance} ${tb.symbol}` : tb.error}
+                  >
+                    {tb.known ? tb.balanceDisplay : 'unavailable'}
                   </span>
                 </div>
               ))}
@@ -571,15 +644,94 @@ export function CryptoForensics({ onGenerateReport, onOpenFlagModal, initialTarg
             </span>
           </div>
 
+          {/* Anything the decode could not establish, stated before the numbers. */}
+          {txResult.notes?.length > 0 && (
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-700 space-y-1.5">
+              {txResult.notes.map((note, i) => (
+                <p key={i} className="text-xs text-slate-300 flex items-start space-x-2">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                  <span>{note}</span>
+                </p>
+              ))}
+            </div>
+          )}
+
           {txResult.isTokenTransfer && txResult.tokenTransferData && (
             <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 space-y-2">
               <span className="text-xs font-mono font-bold text-amber-300 uppercase">
-                Detected ERC-20 Token Transfer:
+                {txResult.transferCount > 1
+                  ? `Largest of ${txResult.transferCount} ERC-20 transfers:`
+                  : 'ERC-20 token transfer:'}
               </span>
-              <div className="flex items-center space-x-3 text-sm font-mono text-white">
+              <div className="flex flex-wrap items-baseline gap-2 text-sm font-mono text-white">
                 <span className="text-xl font-extrabold text-amber-400">
-                  ${txResult.tokenTransferData.amount.toFixed(2)} {txResult.tokenTransferData.tokenSymbol}
+                  {txResult.tokenTransferData.amountDisplay}
                 </span>
+                {txResult.tokenTransferData.amountResolved && (
+                  <span className="text-amber-200 font-bold">
+                    {txResult.tokenTransferData.tokenSymbol || 'tokens'}
+                  </span>
+                )}
+              </div>
+              {txResult.tokenTransferData.amountResolved && (
+                <p className="text-[11px] font-mono text-slate-400">
+                  Exact: {txResult.tokenTransferData.amount}
+                  {' · '}decimals {txResult.tokenTransferData.decimals}
+                  {' ('}{txResult.tokenTransferData.decimalsSource}{')'}
+                </p>
+              )}
+              <p className="text-xs font-mono text-slate-300 break-all">
+                {txResult.tokenTransferData.sender}
+                {' -> '}
+                {txResult.tokenTransferData.recipient}
+              </p>
+            </div>
+          )}
+
+          {/* Native value and fee, exact strings from BigInt arithmetic. */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
+            <div className="p-3 rounded-xl bg-[#0a0d14] border border-slate-800">
+              <span className="text-slate-500">Native value:</span>
+              <p className="text-white font-bold pt-0.5">
+                {txResult.nativeValue} {txResult.nativeSymbol}
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-[#0a0d14] border border-slate-800">
+              <span className="text-slate-500">Fee paid:</span>
+              <p className="text-white font-bold pt-0.5">
+                {txResult.feePaid ? `${txResult.feePaid} ${txResult.nativeSymbol}` : 'unavailable'}
+              </p>
+            </div>
+            <div className="p-3 rounded-xl bg-[#0a0d14] border border-slate-800">
+              <span className="text-slate-500">Block:</span>
+              <p className="text-white font-bold pt-0.5">
+                {txResult.blockNumber ?? 'pending'}
+              </p>
+            </div>
+          </div>
+
+          {/* Full transfer list. With one transfer the panel above says it all. */}
+          {txResult.transferCount > 1 && (
+            <div className="space-y-2">
+              <h4 className="text-xs font-mono font-bold text-slate-300 uppercase">
+                All {txResult.transferCount} transfers in this transaction:
+              </h4>
+              <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-800 divide-y divide-slate-800">
+                {txResult.transfers.map((t, i) => (
+                  <div key={i} className="p-3 bg-[#0a0d14] text-xs font-mono space-y-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className={t.amountResolved ? 'text-amber-300 font-bold' : 'text-slate-400 italic'}>
+                        {t.amountDisplay} {t.amountResolved ? (t.tokenSymbol || '') : ''}
+                      </span>
+                      <span className="text-slate-500 text-[10px]">
+                        {identifyEntity(t.recipient).name}
+                      </span>
+                    </div>
+                    <p className="text-slate-400 break-all">
+                      {t.sender} {'->'} {t.recipient}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
           )}

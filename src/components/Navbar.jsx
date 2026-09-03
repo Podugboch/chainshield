@@ -1,11 +1,17 @@
 import React from 'react';
-import { Shield, ShieldAlert, Activity, Database, FileText, ShieldBan } from 'lucide-react';
+import { Shield, ShieldAlert, Activity, Database, FileText, ShieldBan, Ban, DatabaseZap } from 'lucide-react';
 
-export function Navbar({ activeTab, setActiveTab }) {
+// `onOpenSupabaseModal` was passed in by App.jsx but never destructured here, so
+// the cloud-connection modal had no way to be opened -- the whole Supabase setup
+// screen was unreachable from the running app.
+export function Navbar({ activeTab, setActiveTab, onOpenSupabaseModal }) {
   const navItems = [
     { id: 'url-scanner', label: 'Link Scanner', icon: Shield },
-    { id: 'message-scanner', label: 'Message & Email AI', icon: ShieldAlert },
+    // Not "AI": the message scanner is the rule-based detector in
+    // src/lib/phishingDetector.js. The model this label referred to did not exist.
+    { id: 'message-scanner', label: 'Message & Email Scanner', icon: ShieldAlert },
     { id: 'forensics', label: 'Crypto Forensics', icon: Activity },
+    { id: 'payout-guard', label: 'Payout Firewall', icon: Ban },
     { id: 'enforcement', label: 'Blacklist & Freeze Hub', icon: ShieldBan },
     { id: 'cases', label: 'Investigation Cases', icon: FileText },
     { id: 'threat-db', label: 'Threat Database', icon: Database },
@@ -30,12 +36,12 @@ export function Navbar({ activeTab, setActiveTab }) {
                   v1.0
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 hidden sm:block">AI Phishing Scanner & Crypto Forensics</p>
+              <p className="text-[11px] text-slate-400 hidden sm:block">Phishing Scanner &amp; Crypto Forensics</p>
             </div>
           </div>
 
           {/* Nav Tabs */}
-          <nav className="hidden lg:flex space-x-1">
+          <nav className="hidden lg:flex items-center space-x-1">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -54,6 +60,17 @@ export function Navbar({ activeTab, setActiveTab }) {
                 </button>
               );
             })}
+
+            {onOpenSupabaseModal && (
+              <button
+                onClick={onOpenSupabaseModal}
+                title="Connect a Supabase project for shared threat intelligence"
+                className="flex items-center space-x-2 px-3.5 py-2 ml-2 rounded-lg text-xs font-medium text-slate-400 hover:text-emerald-300 hover:bg-slate-800/60 border border-slate-800 transition-all"
+              >
+                <DatabaseZap className="w-3.5 h-3.5" />
+                <span>Cloud</span>
+              </button>
+            )}
           </nav>
 
         </div>
@@ -78,6 +95,16 @@ export function Navbar({ activeTab, setActiveTab }) {
               </button>
             );
           })}
+
+          {onOpenSupabaseModal && (
+            <button
+              onClick={onOpenSupabaseModal}
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs whitespace-nowrap font-medium text-slate-400 hover:bg-slate-800 border border-slate-800"
+            >
+              <DatabaseZap className="w-3.5 h-3.5" />
+              <span>Cloud</span>
+            </button>
+          )}
         </div>
 
       </div>

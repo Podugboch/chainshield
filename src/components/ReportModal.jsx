@@ -3,11 +3,15 @@ import { X, Copy, Check, Printer, FileText, Shield } from 'lucide-react';
 import { DEFAULT_INCIDENT, generateLawEnforcementDossier } from '../lib/blockchainForensics';
 
 export function ReportModal({ isOpen, onClose, customIncident }) {
-  if (!isOpen) return null;
-
+  // Hooks first. App.jsx renders this modal unconditionally and toggles `isOpen`,
+  // so returning before useState took the hook count from 0 to 1 on open, which
+  // React rejects outright ("Rendered more hooks than during the previous
+  // render") -- the modal could not be opened at all.
   const [copied, setCopied] = useState(false);
   const incidentData = customIncident || DEFAULT_INCIDENT;
-  const dossierText = generateLawEnforcementDossier(incidentData);
+  const dossierText = isOpen ? generateLawEnforcementDossier(incidentData) : '';
+
+  if (!isOpen) return null;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(dossierText);

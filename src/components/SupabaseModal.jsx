@@ -1,17 +1,82 @@
-import React, { useState } from 'react';
-import { X, DatabaseZap, CheckCircle2, Key, Globe, ExternalLink } from 'lucide-react';
-import { isSupabaseConfigured } from '../lib/supabase';
+import React, { useState, useEffect } from 'react';
+import { X, DatabaseZap, CheckCircle2, Key, Globe, AlertTriangle, HardDrive, Loader2 } from 'lucide-react';
+import { getCloudStatus } from '../lib/supabase';
+
+/**
+ * How each cloud state is presented. The 'anonymous-disabled' case is the one
+ * that matters: the project connects, the modal said "Refreshing connection...",
+ * and every scan and case file silently stayed in this browser because no
+ * session could be created. Nothing in the UI reported that.
+ */
+const STATUS_VIEW = {
+  active: {
+    tone: 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300',
+    Icon: CheckCircle2,
+    label: 'Connected — cloud sync active',
+  },
+  'anonymous-disabled': {
+    tone: 'bg-amber-950/50 border-amber-500/40 text-amber-200',
+    Icon: AlertTriangle,
+    label: 'Connected, but no session — running on browser storage',
+  },
+  error: {
+    tone: 'bg-red-950/50 border-red-500/40 text-red-200',
+    Icon: AlertTriangle,
+    label: 'Cloud unreachable',
+  },
+  none: {
+    tone: 'bg-slate-950 border-slate-700 text-slate-300',
+    Icon: HardDrive,
+    label: 'Local only',
+  },
+  unknown: {
+    tone: 'bg-slate-950 border-slate-700 text-slate-400',
+    Icon: Loader2,
+    label: 'Checking connection…',
+  },
+};
 
 export function SupabaseModal({ isOpen, onClose }) {
-  if (!isOpen) return null;
-
+  // Hooks before the isOpen guard -- see the note in ReportModal. Returning
+  // first meant the hook count changed when the modal opened, which React
+  // treats as a fatal error.
   const [url, setUrl] = useState(localStorage.getItem('chainshield_supabase_url') || '');
   const [anonKey, setAnonKey] = useState(localStorage.getItem('chainshield_supabase_key') || '');
   const [saved, setSaved] = useState(false);
+  const [status, setStatus] = useState(null);
+  const [formError, setFormError] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    setStatus(null);
+    getCloudStatus().then((s) => {
+      if (!cancelled) setStatus(s);
+    });
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const view = STATUS_VIEW[status?.configured ? status.session : 'none']
+    || STATUS_VIEW[status ? 'unknown' : 'unknown'];
 
   const handleSave = () => {
-    localStorage.setItem('chainshield_supabase_url', url.trim());
-    localStorage.setItem('chainshield_supabase_key', anonKey.trim());
+    const trimmedUrl = url.trim();
+    const trimmedKey = anonKey.trim();
+    // Saving one half of a credential pair leaves the app configured-but-broken,
+    // and the old handler accepted it without a word.
+    if (!trimmedUrl || !trimmedKey) {
+      setFormError('Both the project URL and the anon key are required. Use "Reset to Local Offline Mode" to disconnect instead.');
+      return;
+    }
+    if (!/^https?:\/\/[^\s]+$/i.test(trimmedUrl)) {
+      setFormError('The project URL should look like https://your-project-ref.supabase.co');
+      return;
+    }
+    setFormError('');
+    localStorage.setItem('chainshield_supabase_url', trimmedUrl);
+    localStorage.setItem('chainshield_supabase_key', trimmedKey);
     setSaved(true);
     setTimeout(() => {
       window.location.reload();
@@ -47,8 +112,25 @@ export function SupabaseModal({ isOpen, onClose }) {
         {/* Body */}
         <div className="p-6 space-y-4 text-xs font-mono">
           <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 leading-relaxed font-sans">
-            ChainShield has a built-in PostgreSQL schema in <code className="text-sky-300">supabase/schema.sql</code>. 
-            Connect your Supabase project below to synchronize live threat intelligence across all devices.
+            ChainShield ships its PostgreSQL schema and row-level-security policies in{' '}
+            <code className="text-sky-300">supabase/schema.sql</code>. Apply that file to your
+            project first, then connect below. Case files stay private to your session; the
+            wallet blocklist is shared.
+          </div>
+
+          {/* Live state, read from the same source the data layer uses. */}
+          <div className={`p-3 rounded-xl border flex items-start space-x-2 font-sans ${view.tone}`}>
+            <view.Icon className={`w-4 h-4 shrink-0 mt-0.5 ${!status ? 'animate-spin' : ''}`} />
+            <div className="space-y-0.5">
+              <p className="font-bold">{status ? view.label : 'Checking connection…'}</p>
+              {status?.detail && <p className="text-[11px] opacity-90">{status.detail}</p>}
+              {status?.session === 'anonymous-disabled' && (
+                <p className="text-[11px] opacity-90">
+                  Supabase → Authentication → Sign In / Providers → enable <b>Anonymous</b>,
+                  then reload this page.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="space-y-1">
@@ -79,10 +161,20 @@ export function SupabaseModal({ isOpen, onClose }) {
             />
           </div>
 
+          {formError && (
+            <div className="p-2.5 rounded-lg bg-red-950/50 border border-red-500/40 text-red-200 flex items-start space-x-2 font-sans">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{formError}</span>
+            </div>
+          )}
+
           {saved && (
-            <div className="p-2.5 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 flex items-center space-x-2">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Saved! Refreshing connection...</span>
+            <div className="p-2.5 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 flex items-start space-x-2 font-sans">
+              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+              {/* Reloading is not the same as connecting. The banner used to
+                  imply the credentials had been accepted; the panel above
+                  reports what actually happened after the reload. */}
+              <span>Credentials stored. Reloading — the status panel above will show whether the connection works.</span>
             </div>
           )}
         </div>
